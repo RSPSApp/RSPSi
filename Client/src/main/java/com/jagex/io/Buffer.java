@@ -22,7 +22,7 @@ public final class Buffer {
 	/**
 	 * Creates the buffer with the specified payload.
 	 * 
-	 * @param payload
+	 * @param buffer
 	 *            The payload.
 	 */
 	
@@ -143,6 +143,11 @@ public final class Buffer {
 	public int readLEUShortA() {
 		position += 2;
 		return ((payload[position - 1] & 0xff) << 8) + (payload[position - 2] - 128 & 0xff);
+	}
+
+	public int read24Int() {
+		position += 3;
+		return ((payload[position - 3] & 0xff) << 16) + ((payload[position - 2] & 0xff) << 8) + (payload[position - 1] & 0xff);
 	}
 
 	public long readLong() {
