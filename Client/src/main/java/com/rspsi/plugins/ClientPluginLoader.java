@@ -19,15 +19,15 @@ public class ClientPluginLoader {
 	private static int count = 0;
 	
 	private static ServiceLoader<ClientPlugin> serviceLoader;
+
+	private static List<String> activePlugins = Lists.newArrayList();
 	
 	public static ServiceLoader<ClientPlugin> getServiceLoader(){
 		if(serviceLoader == null)
 			loadPlugins();
 		return serviceLoader;
 	}
-	
-	
-	
+
 	public static void loadPlugins() {
 		File pluginPath = new File("plugins" + File.separator + "active");
 		log.info("Plugin folder contains {} files.", pluginPath.listFiles().length);
@@ -38,6 +38,7 @@ public class ClientPluginLoader {
 		for(File pluginFile : plugins) {
 			
 			try {
+				activePlugins.add(pluginFile.getName().replaceAll(".jar", "").trim());
 				URL url = pluginFile.toURI().toURL();
 				urls.add(url);
 				log.info("Added {} to plugin URL", url.toString());
@@ -69,5 +70,9 @@ public class ClientPluginLoader {
 			consumer.accept(plugin);
 		}
 		
+	}
+
+	public static List<String> getActivePlugins() {
+		return activePlugins;
 	}
 }

@@ -497,7 +497,8 @@ public class Chunk {
 			if (!MapRegion.objectsReady(objectMapData, 0, 0))
 				return false;
 
-		loadChunk();
+		// This caused tiles to be loaded twice
+		//loadChunk();
 		ready = true;
 		return true;
 	}

@@ -6,6 +6,7 @@ import java.util.Map;
 import com.jagex.Client;
 import com.jagex.cache.def.RSArea;
 import com.jagex.cache.loader.config.RSAreaLoader;
+import com.rspsi.plugins.ClientPluginLoader;
 import lombok.extern.slf4j.Slf4j;
 
 import com.jagex.cache.def.Floor;
@@ -472,56 +473,65 @@ public final class MapRegion {
 	}
 
 	public final void decodeMapData(Buffer buffer, int x, int y, int z, int regionX, int regionY, int orientation) {// XXX
-		if (x >= 0 && x < width && y >= 0 && y < length) {
-			tileFlags[z][x][y] = 0;
+		boolean usingRspsApp = ClientPluginLoader.getActivePlugins().contains("RSPSAppPlugin");
+		try {
+			if (x >= 0 && x < width && y >= 0 && y < 104) { //length
+				tileFlags[z][x][y] = 0;
+				do {
+					int type = buffer.readUByte();
+
+					if (type == 0) {
+						manualTileHeight[z][x][y] = 0;
+						if (z == 0) {
+							// Elvarg based servers pass in region base absolute x and y
+							int worldX = usingRspsApp ? (regionX * 64) : regionX;
+							int worldY = usingRspsApp ? (regionY * 64) : regionY;
+
+							tileHeights[0][x][y] = -calculateHeight(0xe3b7b + x + worldX, 0x87cce + y + worldY) * 8;
+						} else {
+							tileHeights[z][x][y] = tileHeights[z - 1][x][y] - 240;
+						}
+
+						return;
+					} else if (type == 1) {
+						manualTileHeight[z][x][y] = 1;
+						int height = buffer.readUByte();
+						if (height == 1) {
+							height = 0;
+						}
+						if (z == 0) {
+							tileHeights[0][x][y] = -height * 8;
+						} else {
+							tileHeights[z][x][y] = tileHeights[z - 1][x][y] - height * 8;
+						}
+
+						return;
+					} else if (type <= 49) {
+						overlays[z][x][y] = buffer.readByte();
+						overlayShapes[z][x][y] = (byte) ((type - 2) / 4);
+						overlayOrientations[z][x][y] = (byte) (type - 2 + orientation & 3);
+					} else if (type <= 81) {
+						tileFlags[z][x][y] = (byte) (type - 49);
+					} else {
+						underlays[z][x][y] = (byte) (type - 81);
+					}
+				} while (true);
+			}
+
 			do {
-				int type = buffer.readUByte();
-
-				if (type == 0) {
-					manualTileHeight[z][x][y] = 0;
-					if (z == 0) {
-						tileHeights[0][x][y] = -calculateHeight(0xe3b7b + x + regionX, 0x87cce + y + regionY) * 8;
-					} else {
-						tileHeights[z][x][y] = tileHeights[z - 1][x][y] - 240;
-					}
-
+				int in = buffer.readUByte();
+				if (in == 0) {
+					break;
+				} else if (in == 1) {
+					buffer.readUByte();
 					return;
-				} else if (type == 1) {
-					manualTileHeight[z][x][y] = 1;
-					int height = buffer.readUByte();
-					if (height == 1) {
-						height = 0;
-					}
-					if (z == 0) {
-						tileHeights[0][x][y] = -height * 8;
-					} else {
-						tileHeights[z][x][y] = tileHeights[z - 1][x][y] - height * 8;
-					}
-
-					return;
-				} else if (type <= 49) {
-					overlays[z][x][y] = buffer.readByte();
-					overlayShapes[z][x][y] = (byte) ((type - 2) / 4);
-					overlayOrientations[z][x][y] = (byte) (type - 2 + orientation & 3);
-				} else if (type <= 81) {
-					tileFlags[z][x][y] = (byte) (type - 49);
-				} else {
-					underlays[z][x][y] = (byte) (type - 81);
+				} else if (in <= 49) {
+					buffer.readUByte();
 				}
 			} while (true);
+		} catch (Exception e) {
+			log.info("Exception reading tile " + e.getMessage());
 		}
-
-		do {
-			int in = buffer.readUByte();
-			if (in == 0) {
-				break;
-			} else if (in == 1) {
-				buffer.readUByte();
-				return;
-			} else if (in <= 49) {
-				buffer.readUByte();
-			}
-		} while (true);
 	}
 
 	public final void unpackTiles(byte[] data, int dX, int dY, int regionX, int regionY) {
