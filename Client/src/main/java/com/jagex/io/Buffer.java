@@ -144,12 +144,6 @@ public final class Buffer {
 		position += 2;
 		return ((payload[position - 1] & 0xff) << 8) + (payload[position - 2] - 128 & 0xff);
 	}
-
-	public int read24Int() {
-		position += 3;
-		return ((payload[position - 3] & 0xff) << 16) + ((payload[position - 2] & 0xff) << 8) + (payload[position - 1] & 0xff);
-	}
-
 	public long readLong() {
 		long msi = readInt() & 0xFFFFFFFFL;
 		long lsi = readInt() & 0xFFFFFFFFL;

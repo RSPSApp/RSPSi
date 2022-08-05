@@ -124,7 +124,7 @@ public class AnimationDefinitionLoaderOSRS extends AnimationDefinitionLoader {
 				int len = buffer.readUByte();
 
 				for (int i = 0; i < len; i++) {
-					buffer.read24Int();
+					buffer.readUTriByte();
 				}
 			} else {
 				System.out.println("Error unrecognised seq config code: " + opcode);
