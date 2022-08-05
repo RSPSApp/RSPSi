@@ -127,7 +127,7 @@ public class Index317 extends Index {
 			crcs = readArchiveProperties(CRC_NAMES[id - 1], 2);
 			priorities = readArchiveProperties(INDEX_NAMES[id - 1], id == 2 ? 1 : 0);
 		}
-		for(int i = 0; i < archives.length; i++) {
+		for(int i = 0; i < archives.length-1; i++) {
 			archiveIds[i] = i;
 			Archive317 archive = (Archive317) (archives[i] = new Archive317(i));
 			if (versions == null || crcs == null || i >= versions.length) {
