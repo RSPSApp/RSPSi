@@ -28,7 +28,7 @@
 <?import javafx.scene.paint.Color?>
 <?import javafx.scene.text.Font?>
 
-<VBox id="main-pane" maxHeight="1.7976931348623157E308" maxWidth="1.7976931348623157E308" prefWidth="1024.0" style="-fx-background-color: #3c3c3c;" styleClass="root" stylesheets="@../css/layout.css" xmlns="http://javafx.com/javafx/9.0.4" xmlns:fx="http://javafx.com/fxml/1">
+<VBox id="main-pane" maxHeight="1.7976931348623157E308" maxWidth="1.7976931348623157E308" prefWidth="1024.0" style="-fx-background-color: #3c3c3c;" styleClass="root" stylesheets="@../css/layout.css" xmlns="http://javafx.com/javafx/8.0.271" xmlns:fx="http://javafx.com/fxml/1">
   <children>
       <BorderPane VBox.vgrow="NEVER">
          <VBox.margin>
