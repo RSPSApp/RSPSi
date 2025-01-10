@@ -269,7 +269,7 @@ public final class MapRegion {
 	private int length;
 	private int[] luminances;
 	public byte[][][] overlayOrientations;
-	public byte[][][] overlays;
+	public short[][][] overlays;
 	public byte[][][] manualTileHeight;
 	public byte[][][] overlayShapes;
 	private int[] saturations;
@@ -277,7 +277,7 @@ public final class MapRegion {
 	public byte[][][] tileFlags;
 	public int[][][] tileHeights;
 
-	public byte[][][] underlays;
+	public short[][][] underlays;
 
 	private int width;
 
@@ -290,8 +290,8 @@ public final class MapRegion {
 		this.length = length;
 		tileHeights = new int[4][width + 1][length + 1];
 		tileFlags = new byte[4][width][length];
-		underlays = new byte[4][width][length];
-		overlays = new byte[4][width][length];
+		underlays = new short[4][width][length];
+		overlays = new short[4][width][length];
 		manualTileHeight = new byte[4][width][length];
 		overlayShapes = new byte[4][width][length];
 		overlayOrientations = new byte[4][width][length];
@@ -473,65 +473,56 @@ public final class MapRegion {
 	}
 
 	public final void decodeMapData(Buffer buffer, int x, int y, int z, int regionX, int regionY, int orientation) {// XXX
-		boolean usingRspsApp = ClientPluginLoader.getActivePlugins().contains("RSPSAppPlugin");
-		try {
-			if (x >= 0 && x < width && y >= 0 && y < 104) { //length
-				tileFlags[z][x][y] = 0;
-				do {
-					int type = buffer.readUByte();
-
-					if (type == 0) {
-						manualTileHeight[z][x][y] = 0;
-						if (z == 0) {
-							// Elvarg based servers pass in region base absolute x and y
-							int worldX = usingRspsApp ? (regionX * 64) : regionX;
-							int worldY = usingRspsApp ? (regionY * 64) : regionY;
-
-							tileHeights[0][x][y] = -calculateHeight(0xe3b7b + x + worldX, 0x87cce + y + worldY) * 8;
-						} else {
-							tileHeights[z][x][y] = tileHeights[z - 1][x][y] - 240;
-						}
-
-						return;
-					} else if (type == 1) {
-						manualTileHeight[z][x][y] = 1;
-						int height = buffer.readUByte();
-						if (height == 1) {
-							height = 0;
-						}
-						if (z == 0) {
-							tileHeights[0][x][y] = -height * 8;
-						} else {
-							tileHeights[z][x][y] = tileHeights[z - 1][x][y] - height * 8;
-						}
-
-						return;
-					} else if (type <= 49) {
-						overlays[z][x][y] = buffer.readByte();
-						overlayShapes[z][x][y] = (byte) ((type - 2) / 4);
-						overlayOrientations[z][x][y] = (byte) (type - 2 + orientation & 3);
-					} else if (type <= 81) {
-						tileFlags[z][x][y] = (byte) (type - 49);
-					} else {
-						underlays[z][x][y] = (byte) (type - 81);
-					}
-				} while (true);
-			}
-
+		if (x >= 0 && x < width && y >= 0 && y < length) {
+			tileFlags[z][x][y] = 0;
 			do {
-				int in = buffer.readUByte();
-				if (in == 0) {
-					break;
-				} else if (in == 1) {
-					buffer.readUByte();
+				int type = buffer.readUShort();
+
+				if (type == 0) {
+					manualTileHeight[z][x][y] = 0;
+					if (z == 0) {
+						tileHeights[0][x][y] = -calculateHeight(0xe3b7b + x + regionX, 0x87cce + y + regionY) * 8;
+					} else {
+						tileHeights[z][x][y] = tileHeights[z - 1][x][y] - 240;
+					}
+
 					return;
-				} else if (in <= 49) {
-					buffer.readUByte();
+				} else if (type == 1) {
+					manualTileHeight[z][x][y] = 1;
+					int height = buffer.readUByte();
+					if (height == 1) {
+						height = 0;
+					}
+					if (z == 0) {
+						tileHeights[0][x][y] = -height * 8;
+					} else {
+						tileHeights[z][x][y] = tileHeights[z - 1][x][y] - height * 8;
+					}
+
+					return;
+				} else if (type <= 49) {
+					overlays[z][x][y] = (short) buffer.readShort();
+					overlayShapes[z][x][y] = (byte) ((type - 2) / 4);
+					overlayOrientations[z][x][y] = (byte) (type - 2 + orientation & 3);
+				} else if (type <= 81) {
+					tileFlags[z][x][y] = (byte) (type - 49);
+				} else {
+					underlays[z][x][y] = (short) (type - 81);
 				}
 			} while (true);
-		} catch (Exception e) {
-			log.info("Exception reading tile " + e.getMessage());
 		}
+
+		do {
+			int in = buffer.readUShort();
+			if (in == 0) {
+				break;
+			} else if (in == 1) {
+				buffer.readUByte();
+				return;
+			} else if (in <= 49) {
+				buffer.readUShort();
+			}
+		} while (true);
 	}
 
 	public final void unpackTiles(byte[] data, int dX, int dY, int regionX, int regionY) {

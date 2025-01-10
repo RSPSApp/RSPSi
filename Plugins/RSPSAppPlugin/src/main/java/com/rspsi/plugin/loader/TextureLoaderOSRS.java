@@ -2,12 +2,13 @@ package com.rspsi.plugin.loader;
 
 import org.displee.cache.index.archive.Archive;
 
+import java.util.Arrays;
+
 import com.jagex.cache.graphics.IndexedImage;
 import com.jagex.cache.loader.textures.TextureLoader;
 import com.jagex.draw.textures.PalettedTexture;
 import com.jagex.draw.textures.Texture;
 import com.rspsi.misc.FixedHashMap;
-
 
 public class TextureLoaderOSRS extends TextureLoader {
 
@@ -64,14 +65,18 @@ public class TextureLoaderOSRS extends TextureLoader {
 
 	@Override
 	public void init(Archive archive) {
-		for (int j = 0; j < textures.length; j++)
+		int maxId = 0;
+		for (int j = 0; j < 100; j++)
 			try {
 				IndexedImage texture = new IndexedImage(archive, String.valueOf(j), 0);
 				texture.resize();
 				textures[j] = new PalettedTexture(texture);
+				maxId = j;
 			} catch (Exception _ex) {
-				_ex.printStackTrace();
 			}
+		
+		textures = Arrays.copyOf(textures, maxId + 1);
+		transparent = new boolean[maxId + 1];
 	}
 
 	
