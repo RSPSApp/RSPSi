@@ -1,5 +1,11 @@
 package com.rspsi;
 
+import com.jagex.map.procedural.Biome;
+import com.rspsi.misc.SimplexNoise;
+import javafx.geometry.Bounds;
+import javafx.geometry.Rectangle2D;
+
+import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.FileInputStream;
@@ -7,10 +13,16 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 
 import javax.imageio.ImageIO;
 
 import com.rspsi.util.*;
+import javafx.scene.canvas.Canvas;
+import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.control.TextField;
+import javafx.scene.effect.Effect;
 import org.apache.commons.compress.utils.Lists;
 
 import com.jagex.util.Constants;
@@ -48,6 +60,10 @@ import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import net.coobird.thumbnailator.Thumbnails;
 
+import static com.rspsi.misc.SimplexNoise.noise;
+import static java.awt.Image.SCALE_FAST;
+import static java.awt.Image.SCALE_SMOOTH;
+
 public class GenerateNewMapWindow extends Application {
 
 	private Stage stage;
@@ -55,8 +71,14 @@ public class GenerateNewMapWindow extends Application {
 	boolean okClicked;
 
 	private int[][] heights;
+
+	private int[][] treeMap;
 	
 	private WritableImage blurredImage;
+
+	private Image finalImage;
+
+	BufferedImage bImage;
 
 	@Override
 	public void start(Stage primaryStage) throws Exception {
@@ -79,8 +101,6 @@ public class GenerateNewMapWindow extends Application {
 		primaryStage.setAlwaysOnTop(true);
 
 
-	
-
 		widthSpinner.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(1, 10, 1));
 		lengthSpinner.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(1, 10, 1));
 
@@ -90,12 +110,30 @@ public class GenerateNewMapWindow extends Application {
 		waterDistanceMax.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 128, 0));
 		waterDistanceMin.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 128, 0));
 
-		heightsMax.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 800, 550));
-		heightsMin.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 800, 120));
+		heightsMin.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 800, 0));
+		heightsMax.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 10000, 336));
+
+		frequency.setValueFactory(new SpinnerValueFactory.DoubleSpinnerValueFactory(0.0, 7.0, 4.57));
+		frequency.setEditable(true);
+
+		peaksValleys.setValueFactory(new SpinnerValueFactory.DoubleSpinnerValueFactory(0.0, 10.0, 1.87));
+		peaksValleys.setEditable(true);
+
+		xCoord.setValueFactory(new SpinnerValueFactory.DoubleSpinnerValueFactory(-999999.0, 9999999.00, 0.00));
+		xCoord.setEditable(true);
+		yCoord.setValueFactory(new SpinnerValueFactory.DoubleSpinnerValueFactory(-999999.0, 9999999.00, 0.00));
+		yCoord.setEditable(true);
+
+		seed.setText((Math.random() * 100000) + "");
+		seed.setEditable(true);
+
+		treeFreq.setText("3");
+		treeFreq.setEditable(true);
 
 		setLinkedMinMax(waterDistanceMin, waterDistanceMax);
 		setLinkedMinMax(heightsMin, heightsMax);
 
+		populateBiomeSelection();
 
 		okButton.setOnAction(evt -> {
 			primaryStage.hide();
@@ -105,16 +143,15 @@ public class GenerateNewMapWindow extends Application {
 			reset();
 			primaryStage.hide();
 		});
-		addConditionBtn.setOnAction(evt -> {
-			generateCondition();
-		});
 		
 		browseBtn.setOnAction(evt -> {
 			File f = RetentionFileChooser.showOpenDialog(primaryStage, FilterMode.PNG);
 			if(f != null) {
 				try {
 					Image image = new Image(new FileInputStream(f));
-					
+
+					// TODO: Fix browse for heightmap to use Canvas instead of legacy ImageView
+					/*
 					tileHeightImageView.setFitHeight(lengthSpinner.getValue() * 64);
 					tileHeightImageView.setFitWidth(widthSpinner.getValue() * 64);
 					tileHeightImageView.setImage(image);
@@ -127,97 +164,201 @@ public class GenerateNewMapWindow extends Application {
 						
 						setWaterEdges();
 					});
+					 */
 				} catch (Exception e) {
 					FXDialogs.showError(primaryStage,"Error while loading image", "There was an error while attempting to load the selected image.");
 				}
 			}
 		});
+
 		generateBtn.setOnAction(evt -> {
-			int width = widthSpinner.getValue() * 64;
-			int height = lengthSpinner.getValue() * 64;
-			int randomX = (int) (Math.random() * 100000);
+			int width = (int)(widthSpinner.getValue() * 64);
+			int height = (int)(lengthSpinner.getValue() * 64);
+			double frequencyVal = frequency.getValue();
+			double peaksValleysVal = peaksValleys.getValue();
+			int treeFreqVal = Integer.parseInt(treeFreq.getText());
 
-			WritableImage image = new WritableImage(width, height);
-			//float[][] smoothNoise = SimplexNoise.generateOctavedSimplexNoise(width, height,  3, 0.4f, 0.005f);//, 14, (long) Math.random() * Long.MAX_VALUE));
-			for(int w = 0;w<width;w++) {
-				for(int h = 0;h<height;h++) {
-					float tileColor = calculateHeight(randomX + w, randomX + h) / (1.0f * heightsMax.getValue());
-					Color color = new Color(tileColor, tileColor, tileColor, 1.0f);
-					image.getPixelWriter().setColor(w, h, color);
-					//heights[w][h] = (int) -((tileColor * heightsMax.getValue())  * 8);
-				}
+			double xCoordVal = xCoord.getValue();
+			double yCoordVal = yCoord.getValue();
+
+			double seedVal = 68172.68859943567; //Double.parseDouble(seed.getText());
+/*
+			if (!preserveSeed.isSelected()) {
+				double newSeed = (Math.random() * Double.MAX_VALUE);
+				seedVal = newSeed;
+				seed.setText(newSeed + "");
 			}
+*/
 
-			
-				/*List<Point> points = Lists.newArrayList();
-				for(int x = min;x<=width - min;x+=width / 8) {
-					Point p = new Point(x, (height - min) - (r.nextInt(max - min)));
-					points.add(p);
+			WritableImage image = this.generateHeightmap(width, height, frequencyVal, peaksValleysVal, seedVal, 0, 0);
+			this.bImage = this.processHeightmap(image, tileHeightCanvas);
 
-				}
+			WritableImage image2 = this.generateHeightmap(width, height, frequencyVal, peaksValleysVal, seedVal, xCoordVal, yCoordVal);
+			this.processHeightmap(image2, tileHeightCanvas2);
 
-
-				for(int y = height - min;y>=min;y-= width / 8) {
-					Point p = new Point(width - min - (r.nextInt(max - min)), y);
-					points.add(p);
-
-				}
-
-
-				for(int x = width - min;x>=min;x-=width / 8) {
-					Point p = new Point(x, min + r.nextInt(max - min));
-					points.add(p);
-
-				}
-
-				for(int y = min;y<=height - min;y+=height / 8) {
-					Point p = new Point(min + r.nextInt(max - min), y);
-					points.add(p);
-
-				}
-				System.out.println("Generated " + points.size());
-				for(Point p : points) {
-					canvas.getChildren().add();
-				}*/
-
-				/*for(int i = 0;i<points.size();i++) {
-					Point p = points.get(i);
-					Point p2 = i == points.size() - 1 ? points.get(0) : points.get(i + 1);
-
-					if(p.x > 0 && p.x < width && p.y > 0 && p.y < height) {
-						QuadCurve curve = new QuadCurve();
-						curve.setStartX(p.getX());
-						curve.setStartY(p.getY());
-						curve.setEndX(p2.getX());
-						curve.setEndY(p.getY());
-						double controlX = Math.max(p.getX(), p2.getX()) - ((Math.max(p.getX(), p2.getX()) - Math.min(p.getX(), p2.getX())) / 2);
-						double controlY = Math.max(p.getY(), p2.getY()) - ((Math.max(p.getY(), p2.getY()) - Math.min(p.getY(), p2.getY())) / 2);
-
-						curve.setControlX(controlX);
-						curve.setControlY(controlY);
-						canvas.getChildren().add(curve);
-					}
-				}*/
-			
-			tileHeightImageView.setFitHeight(height);
-			tileHeightImageView.setFitWidth(width);
-			tileHeightImageView.setSmooth(true);
-			tileHeightImageView.setImage(image);
-			//tileHeightImageView.setEffect(gaussianBlur);
-			
-			primaryStage.sizeToScene();
-			Platform.runLater(() -> {
-				blurredImage = tileHeightImageView.snapshot(new SnapshotParameters(), null);
-				setWaterEdges();
-			});
+			// Add trees
+			this.treeMap = this.generateTreeMap(tileHeightCanvas2, treeFreqVal, seedVal, xCoordVal, yCoordVal);
 		});
 
 
 		primaryStage.sizeToScene();
 	}
-	
+
+	public WritableImage generateHeightmap(int width, int height, double frequencyVal, double peaksValleysVal, double seedVal, double xCoordVal, double yCoordVal) {
+		WritableImage image = new WritableImage(width, height);
+
+		for (int y = 0; y < height; y++) {
+			for (int x = 0; x < width; x++) {
+				double nx = ((double) x/width) - 0.5, ny = ((double)y/height) - 0.5;
+
+				double noiseResult = seedVal == 0.0
+						? noise((frequencyVal * nx) - xCoordVal, (frequencyVal * ny) - yCoordVal)
+						// User has specified a spikes value, include the parameter
+						: noise((frequencyVal * nx) - xCoordVal, (frequencyVal * ny) - yCoordVal, seedVal);
+
+				noiseResult = Math.pow(noiseResult, peaksValleysVal);
+
+				// noise() returns values in the range of -1 to 1, but we need between 0.0-1.0
+				// Shift all values by 1.0 so they're all between 0.0 and 2.0
+				double transformedNoiseResult = noiseResult + 1.0;
+				// Calculate the value as a percentage of 2.0 (and transform to decimal)
+				double opacity = (transformedNoiseResult/2.0 * 100) / 100;
+
+				Color color = new Color(opacity, opacity, opacity, 1.0);
+				image.getPixelWriter().setColor(x, y, color);
+			}
+		}
+
+		return image;
+	}
+
+	public int[][] generateTreeMap(Canvas canvasNode, int R, double seedVal, double xCoordVal, double yCoordVal) {
+		int treeFrequency = 50; // Frequency is not density, R number is density
+		int width = (int) canvasNode.getWidth() * widthSpinner.getValue(),
+				height = (int) canvasNode.getHeight() * lengthSpinner.getValue();
+		int[][] result = new int[width][height];
+
+		GraphicsContext gc = canvasNode.getGraphicsContext2D();
+		gc.setFill(Color.WHITE);
+		double[][] bluenoise = new double[width][height];
+
+		for (int y = 0; y < height; y++) {
+			for (int x = 0; x < width; x++) {
+				double nx = ((double) x/width) - 0.5, ny = ((double)y/height) - 0.5;
+
+				double noiseResult = seedVal == 0.0
+						? noise((treeFrequency * nx) - xCoordVal, (treeFrequency * ny) - yCoordVal)
+						// User has specified a spikes value, include the parameter
+						: noise((treeFrequency * nx) - xCoordVal, (treeFrequency * ny) - yCoordVal, seedVal);
+
+
+				// noise() returns values in the range of -1 to 1, but we need between 0.0-1.0
+				// Shift all values by 1.0 so they're all between 0.0 and 2.0
+				double transformedNoiseResult = noiseResult + 1.0;
+				// Calculate the value as a percentage of 2.0 (and transform to decimal)
+				double opacity = (transformedNoiseResult/2.0 * 100) / 100;
+
+				bluenoise[x][y] = opacity;
+			}
+		}
+
+		for (int yc = 0; yc < height; yc++) {
+			for (int xc = 0; xc < width; xc++) {
+				double max = 0;
+				// there are more efficient algorithms than this
+				for (int yn = yc - R; yn <= yc + R; yn++) {
+					for (int xn = xc - R; xn <= xc + R; xn++) {
+						if (0 <= yn && yn < height && 0 <= xn && xn < width) {
+							double e = bluenoise[yn][xn];
+							if (e > max) { max = e; }
+						}
+					}
+				}
+				if (bluenoise[yc][xc] == max) {
+					// Draw dot on map to represent tree
+					gc.fillOval(xc, yc, 1, 1);
+					// Flag this slot as having a tree
+					result[xc][yc] = 1;
+				}
+			}
+		}
+
+		return result;
+	}
+
+	public Image scale(Image source, int targetWidth, int targetHeight, boolean preserveRatio) {
+		ImageView imageView = new ImageView(source);
+		imageView.setPreserveRatio(preserveRatio);
+		imageView.setFitWidth(targetWidth);
+		imageView.setFitHeight(targetHeight);
+		return imageView.snapshot(null, null);
+	}
+
+	private BufferedImage processHeightmap(WritableImage image, Canvas canvasNode) {
+		//final Bounds bounds = node.getLayoutBounds();
+
+//		final WritableImage image = new WritableImage(
+//				(int) Math.round(bounds.getWidth() * scale),
+//				(int) Math.round(bounds.getHeight() * scale));
+
+//		final SnapshotParameters spa = new SnapshotParameters();
+//		spa.setTransform(javafx.scene.transform.Transform.scale(scale, scale));
+//
+//		this.finalImage = node.snapshot(spa, image);
+//		final ImageView view = new ImageView(this.finalImage);
+//		view.setFitWidth(bounds.getWidth());
+//		view.setFitHeight(bounds.getHeight());
+//
+//
+//		tileHeightBlurImageView.setImage(this.finalImage);
+
+//		Image originalImage = ((ImageView) node).getImage();
+
+
+		//tileHeightCanvas.setWidth(widthSpinner.getValue() * 64);
+		//tileHeightCanvas.setHeight(lengthSpinner.getValue() * 64);
+
+		GraphicsContext gc = canvasNode.getGraphicsContext2D();
+		gc.drawImage(image,0,0, widthSpinner.getValue() * 64, lengthSpinner.getValue() * 64);
+
+
+		// 1. Convert to BufferedImage so we can read pixels and scale (to blur it)
+		BufferedImage buffered = SwingFXUtils.fromFXImage(image, null);
+
+		// Downscale and upscale to blur the image
+		java.awt.Image tinyImage = buffered.getScaledInstance(widthSpinner.getValue() * 80,  lengthSpinner.getValue() * 80, SCALE_SMOOTH);
+
+		return toBufferedImage(tinyImage.getScaledInstance(widthSpinner.getValue() * 64, lengthSpinner.getValue() * 64, SCALE_SMOOTH));
+		//this.finalImage = canvasNode.snapshot(new SnapshotParameters(), new WritableImage(widthSpinner.getValue() * 64, lengthSpinner.getValue() * 64));
+	}
+
+	/**
+	 * Converts a given Image into a BufferedImage
+	 *
+	 * @param img The Image to be converted
+	 * @return The converted BufferedImage
+	 */
+	public static BufferedImage toBufferedImage(java.awt.Image img)
+	{
+		if (img instanceof BufferedImage)
+		{
+			return (BufferedImage) img;
+		}
+
+		// Create a buffered image with transparency
+		BufferedImage bimage = new BufferedImage(img.getWidth(null), img.getHeight(null), BufferedImage.TYPE_INT_ARGB);
+
+		// Draw the image on to the buffered image
+		Graphics2D bGr = bimage.createGraphics();
+		bGr.drawImage(img, 0, 0, null);
+		bGr.dispose();
+
+		// Return the buffered image
+		return bimage;
+	}
+
 	private void setWaterEdges() {
-		tileHeightImageView.setEffect(null);
+		//tileHeightImageView.setEffect(null);
 		int waterMin = waterDistanceMin.getValue();
 		int waterMax = waterDistanceMax.getValue();
 
@@ -232,9 +373,9 @@ public class GenerateNewMapWindow extends Application {
 			}
 			}
 
-		tileHeightImageView.setImage(blurredImage);
+		//tileHeightImageView.setImage(blurredImage);
 	}
-	
+
 
 	private void setLinkedMinMax(Spinner<Integer> minSpinner, Spinner<Integer> maxSpinner) {
 
@@ -286,42 +427,13 @@ public class GenerateNewMapWindow extends Application {
 		}, maxSpinner.getValueFactory().valueProperty());
 	}
 
-	private Optional<ConditionGridNode> generateCondition() {
-		try {
-			ConditionGridNode gridNode = new ConditionGridNode();
-			this.overlayUnderlayBox.getChildren().add(gridNode);
-			gridNode.getDeleteBtn().setOnAction(evt2 -> {
-				overlayUnderlayBox.getChildren().remove(gridNode);
-			});
-			return Optional.ofNullable(gridNode);
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		return Optional.empty();
-	}
-	public void setHeights() {
-		Image image = this.tileHeightImageView.getImage();
-		if(image != null) {
-			
-				heights = new int[((widthSpinner.getValue() * 64) + 1)][((lengthSpinner.getValue() * 64) + 1)];
-				for(int w = 0;w<image.getWidth();w++) {
-					for(int h = 0;h<image.getHeight();h++) {
-						int tileColor = image.getPixelReader().getArgb(w, h);
-					//	double avgColor = (tileColor.getRed() + tileColor.getBlue() + tileColor.getGreen()) / 3;
-	
-						int max = heightsMax.getValue();
-						int min = heightsMin.getValue();
-						//System.out.println(avgColor);
-						//System.out.println(-avgColor * max);
-						heights[w][h] = (int) -( min + (((tileColor & 0xff) / 255.0) * (max - min)));
-					}
-				}
-			
-		} else {
-			heights = new int[(widthSpinner.getValue() * 64) + 1][(lengthSpinner.getValue() * 64) + 1];
-			for(int x = 0;x<heights.length;x++)
-				Arrays.fill(heights[x], -10);
+	private void populateBiomeSelection() {
+		for (Biome biome : Biome.values()) {
+			CheckBox checkBox = new CheckBox(biome.name());
+			checkBox.setId("biomeChk_"+biome.name());
+			checkBox.setSelected(true);
+
+			this.biomeSelectionBox.getChildren().add(checkBox);
 		}
 	}
 
@@ -397,34 +509,34 @@ public class GenerateNewMapWindow extends Application {
 			reset();
 	}
 
-	public List<TileCondition> buildTileConditions(){
-		List<TileCondition> conditions = Lists.newArrayList();
-		for(Node n : this.overlayUnderlayBox.getChildren()) {
-			if(n instanceof ConditionGridNode) {
-				ConditionGridNode grid = (ConditionGridNode) n;
-				conditions.add(new TileCondition(grid.getRequiredValue().getValue(), grid.getGridCondition().getSelectionModel().getSelectedItem(), grid.getOverlay(), grid.getUnderlay()));
-			}
-		}
-		return conditions;
-	}
-
 	public int[][] getHeights() {
 		//int[][] heights = new int[(widthSpinner.getValue() * 64) + 1][(lengthSpinner.getValue() * 64) + 1];
 		if(heights == null) {
-			setHeights();
-		}/* else {
-			return heights;
-		}
-		if(tileHeightImageView.getImage() != null) {
-			Image image = tileHeightImageView.getImage();
-			for(int x = 0;x<image.getWidth();x++) {
-				for(int y = 0;y<image.getHeight();y++) {
-					heights[x][y] = (int) (image.getPixelReader().getColor(x, y).getBlue() * 60);
-				}
-			}
-		} else {
+			BufferedImage image = this.bImage;
 
-		}*/
+			if(image != null) {
+				// Generating with image
+				int max = heightsMax.getValue();
+				int min = heightsMin.getValue();
+
+				heights = new int[((widthSpinner.getValue() * 64) + 1)][((lengthSpinner.getValue() * 64) + 1)];
+				for(int w = 0;w<image.getWidth();w++) {
+					for(int h = 0;h<image.getHeight();h++) {
+						int tileColor = this.bImage.getRGB(w, h);
+						int generatedHeight = (int) -( min + (((tileColor & 0xff) / 255.0) * (max - min)));
+
+						heights[w][h] = generatedHeight;
+					}
+				}
+
+			} else {
+				// Generating one set height
+				heights = new int[(widthSpinner.getValue() * 64) + 1][(lengthSpinner.getValue() * 64) + 1];
+				for(int x = 0;x<heights.length;x++)
+					Arrays.fill(heights[x], -10);
+			}
+		}
+
 		return heights;
 	}
 
@@ -447,7 +559,10 @@ public class GenerateNewMapWindow extends Application {
 	private TitledPane mapTileHeightBox;
 
 	@FXML
-	private ImageView tileHeightImageView;
+	private Canvas tileHeightCanvas;
+
+	@FXML
+	private Canvas tileHeightCanvas2;
 
 	@FXML
 	private Button generateBtn;
@@ -483,7 +598,28 @@ public class GenerateNewMapWindow extends Application {
 	private Spinner<Integer> heightsMax;
 
 	@FXML
-	private VBox overlayUnderlayBox;
+	private Spinner<Double> frequency;
+
+	@FXML
+	private Spinner<Double> peaksValleys;
+
+	@FXML
+	private TextField seed;
+
+	@FXML
+	private TextField treeFreq;
+
+	@FXML
+	private Spinner<Double> xCoord;
+
+	@FXML
+	private Spinner<Double> yCoord;
+
+	@FXML
+	private CheckBox preserveSeed;
+
+	@FXML
+	private VBox biomeSelectionBox;
 
 	public int getWidth() {
 		// TODO Auto-generated method stub
@@ -493,5 +629,17 @@ public class GenerateNewMapWindow extends Application {
 	public int getLength() {
 		// TODO Auto-generated method stub
 		return lengthSpinner.valueProperty().get();
+	}
+
+	public int getMinHeight() {
+		return heightsMin.getValue();
+	}
+
+	public int getMaxHeight() {
+		return heightsMax.getValue();
+	}
+
+	public int[][] getTreeMap() {
+		return this.treeMap;
 	}
 }

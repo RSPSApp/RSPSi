@@ -283,7 +283,7 @@ public class MeshType3 extends Mesh {
 
             if (var16 == 1)
             {
-                this.faceMaterial[var51] = (byte) (var7.readUShort() - 1);
+                this.faceMaterial[var51] = var7.readUShort() - 1;
             }
 
             if (this.faceTexture != null && this.faceMaterial[var51] != -1)

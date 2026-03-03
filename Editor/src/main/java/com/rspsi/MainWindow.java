@@ -105,6 +105,9 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
+import static com.jagex.map.MapRegion.perlinNoise;
+import static com.rspsi.misc.SimplexNoise.noise;
+
 @Slf4j
 @Getter
 public class MainWindow extends Application {
@@ -240,16 +243,27 @@ public class MainWindow extends Application {
 			controller = new MainController();
 			loader.setController(controller);
 			Parent content = loader.load();
-			double windowWidth = (Double) Settings.properties.getOrDefault("window_width",1240.0);
-			double windowHeight = (Double) Settings.properties.getOrDefault("window_height",800.0);
+			double windowWidth = getDoubleSetting("window_width", 1240.0);
+			double windowHeight = getDoubleSetting("window_height", 800.0);
+			if (windowWidth < 640.0) {
+				windowWidth = 1240.0;
+			}
+			if (windowHeight < 480.0) {
+				windowHeight = 800.0;
+			}
 			scene = new Scene(content,windowWidth,windowHeight);
 
-			scene.setFill(Color.TRANSPARENT);
+			final boolean useCustomChrome = !OSUtil.isMac();
+			if (useCustomChrome) {
+				scene.setFill(Color.TRANSPARENT);
+			}
 
 			primaryStage.setTitle("RSPSi Map Editor 1.16.1");
-			primaryStage.initStyle(StageStyle.TRANSPARENT);
+			primaryStage.initStyle(useCustomChrome ? StageStyle.TRANSPARENT : StageStyle.DECORATED);
 			primaryStage.setScene(scene);
 			primaryStage.getIcons().addAll(ResourceLoader.getSingleton().getIcons());
+			primaryStage.setMinWidth(900.0);
+			primaryStage.setMinHeight(650.0);
 
 			ChangeListener<Number> stageSizeListener = (observable, oldValue, newValue) -> {
 				if((boolean) Settings.properties.getOrDefault("remember_size",true) == true) {
@@ -267,19 +281,23 @@ public class MainWindow extends Application {
 				}
 			};
 
-			double windowLocationWidth = (Double) Settings.properties.getOrDefault("windowLocationWidth",0.0);
-			double windowLocationHeight = (Double) Settings.properties.getOrDefault("windowLocationHeight",0.0);
-
-			if(windowLocationWidth == 0.0 && windowLocationHeight == 0.0) {
+			if (!useCustomChrome) {
 				primaryStage.centerOnScreen();
 			} else {
-				int screenWidth = Toolkit.getDefaultToolkit().getScreenSize().width;
-				int screenHeight = Toolkit.getDefaultToolkit().getScreenSize().height;
-				if (windowLocationWidth <= screenWidth && windowLocationHeight <= screenHeight) {
-					primaryStage.setX(windowLocationWidth);
-					primaryStage.setY(windowLocationHeight);
-				} else {
+				double windowLocationWidth = getDoubleSetting("windowLocationWidth", 0.0);
+				double windowLocationHeight = getDoubleSetting("windowLocationHeight", 0.0);
+
+				if(windowLocationWidth == 0.0 && windowLocationHeight == 0.0) {
 					primaryStage.centerOnScreen();
+				} else {
+					int screenWidth = Toolkit.getDefaultToolkit().getScreenSize().width;
+					int screenHeight = Toolkit.getDefaultToolkit().getScreenSize().height;
+					if (windowLocationWidth <= screenWidth && windowLocationHeight <= screenHeight) {
+						primaryStage.setX(windowLocationWidth);
+						primaryStage.setY(windowLocationHeight);
+					} else {
+						primaryStage.centerOnScreen();
+					}
 				}
 			}
 
@@ -289,6 +307,15 @@ public class MainWindow extends Application {
 			primaryStage.yProperty().addListener(stageLocationListener);
 
 			primaryStage.show();
+			primaryStage.setIconified(false);
+			if (!useCustomChrome) {
+				primaryStage.setAlwaysOnTop(true);
+				Platform.runLater(() -> {
+					primaryStage.toFront();
+					primaryStage.requestFocus();
+					primaryStage.setAlwaysOnTop(false);
+				});
+			}
 
 			FXUtils.centerStage(primaryStage);
 
@@ -763,8 +790,26 @@ public class MainWindow extends Application {
 			EventBus.getDefault().register(this);
 		} catch (Exception e) {
 			e.printStackTrace();
+			throw new RuntimeException("MainWindow initialization failed", e);
 		}
-		primaryStage.sizeToScene();
+		if (!OSUtil.isMac()) {
+			primaryStage.sizeToScene();
+		}
+	}
+
+	private double getDoubleSetting(String key, double defaultValue) {
+		Object value = Settings.properties.getOrDefault(key, defaultValue);
+		if (value instanceof Number) {
+			return ((Number) value).doubleValue();
+		}
+		if (value instanceof String) {
+			try {
+				return Double.parseDouble((String) value);
+			} catch (NumberFormatException ignored) {
+				return defaultValue;
+			}
+		}
+		return defaultValue;
 	}
 	
 	private static ScheduledExecutorService service = Executors.newScheduledThreadPool(4);
@@ -825,6 +870,7 @@ public class MainWindow extends Application {
 				byte[] objectMap = clientInstance.sceneGraph.saveObjects(chunk);
 				byte[] tileMap = chunk.mapRegion.save_terrain_block(chunk);
 
+				// TOBY: Saving to gzip from chunks
 				if (landscapeFile.getName().endsWith(".gz")) {
 					try {
 						tileMap = GZIPUtils.gzipBytes(tileMap);
@@ -876,7 +922,36 @@ public class MainWindow extends Application {
 		GenerateNewMapWindow genNew = new GenerateNewMapWindow();
 		
 		genNew.start(new Stage());
-	
+
+
+		controller.getGenNewMapButton().setOnAction(evt -> {
+				// Toby cick ok when generating new map
+				int chunkWidth = genNew.getWidth();
+				int chunkHeight = genNew.getLength();
+				int height = chunkHeight * 64;
+				int width = chunkWidth * 64;
+				int[][] heights = new int[((chunkWidth * 64) + 1)][((chunkHeight * 64) + 1)];
+
+				for (int y = 0; y < height; y++) {
+					for (int x = 0; x < width; x++) {
+						double nx = x/ width - 0.5, ny = y/height - 0.5;
+						heights[y][x] = (int) noise(2.34 * nx, 2.34 * ny);
+					}
+				}
+
+				try {
+
+					Client.runLater.add(() -> {
+						clientInstance.loadNew(chunkWidth, chunkHeight, heights, genNew.getMinHeight(), genNew.getMaxHeight(), genNew.getTreeMap());
+						fullMapView.resizeMap();
+					});
+				} catch(Exception ex) {
+					FXDialogs.showError(stage,"Error while creating new map", "There was a failure while attempting to initialize\na new map.");
+					ex.printStackTrace();
+				}
+
+		});
+
 		controller.getNewMapButton().setOnAction(evt -> {
 			/*try {
 				byte[] landscape = ByteStreams.toByteArray(getClass().getResourceAsStream("/misc/blank_region.dat"));
@@ -898,7 +973,7 @@ public class MainWindow extends Application {
 				try {
 
 					Client.runLater.add(() -> {
-						clientInstance.loadNew(chunkWidth, chunkHeight, genNew.getHeights());
+						clientInstance.loadNew(chunkWidth, chunkHeight, genNew.getHeights(), genNew.getMinHeight(), genNew.getMaxHeight(), genNew.getTreeMap());
 						fullMapView.resizeMap();
 					});
 				} catch(Exception ex) {

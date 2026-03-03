@@ -4,6 +4,8 @@ import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.List;
 
+import com.jagex.io.Buffer;
+import com.jagex.map.procedural.Biome;
 import com.rspsi.cache.CacheFileType;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
@@ -274,8 +276,6 @@ public class Chunk {
 	}
 
 	public void loadChunk() {
-	
-
 			scenegraph.setChunk(this);
 			incompleteAnimables.clear();
 			//scenegraph.reset();
@@ -302,6 +302,10 @@ public class Chunk {
 
 			}
 
+			// Toby, generate trees here
+			if (newMap && !newObjectsGenerated && biome != null) {
+				mapRegion.generateNewObjects(this);
+			}
 			
 
 			method63();
@@ -484,8 +488,13 @@ public class Chunk {
 	public boolean ready() {
 		if (ready)
 			return true;
-		if(newMap)
+		if(newMap) {
+			if (this.biome != null && !this.biome.objectsReady()) {
+				return false;
+			}
+
 			return true;
+		}
 		if (tileMapId != -1 && tileMapData == null) {
 			//System.out.println("TILE MAP ID: " + tileMapId + " NULL");
 			return false;
@@ -493,9 +502,10 @@ public class Chunk {
 		if (objectMapId != -1 && objectMapData == null) {
 			//System.out.println("OBJECT MAP ID: " + tileMapId + " NULL");
 			return false;
-		} else if(objectMapId != -1 && objectMapData != null)
+		} else if(objectMapId != -1 && objectMapData != null) {
 			if (!MapRegion.objectsReady(objectMapData, 0, 0))
 				return false;
+		}
 
 		// This caused tiles to be loaded twice
 		//loadChunk();
@@ -585,8 +595,33 @@ public class Chunk {
 		return newMap;
 	}
 
+	/**
+	 * Whether all trees/ground decorations etc have been generated for this new chunk yet.
+	 */
+	public boolean newObjectsGenerated = false;
+
 	public void setNewMap(boolean b) {
 		newMap = b;
+	}
+
+	private Biome biome;
+
+	public Biome getBiome() {
+		return this.biome;
+	}
+
+	public void setBiome(Biome biome) {
+		this.biome = biome;
+	}
+
+	private int[][] treeMap;
+
+	public int[][] getTreeMap() {
+		return this.treeMap;
+	}
+
+	public void setTreeMap(int[][] treeMap) {
+		this.treeMap = treeMap;
 	}
 	
 	@Setter

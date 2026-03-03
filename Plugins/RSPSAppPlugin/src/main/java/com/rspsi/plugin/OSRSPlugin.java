@@ -8,6 +8,7 @@ import com.jagex.cache.loader.anim.FrameBaseLoader;
 import com.jagex.cache.loader.anim.FrameLoader;
 import com.jagex.cache.loader.anim.GraphicLoader;
 import com.jagex.cache.loader.config.VariableBitLoader;
+import com.jagex.cache.def.TextureDef;
 import com.jagex.cache.loader.floor.FloorDefinitionLoader;
 import com.jagex.cache.loader.map.MapIndexLoader;
 import com.jagex.cache.loader.object.ObjectDefinitionLoader;
@@ -46,19 +47,27 @@ public class OSRSPlugin implements ClientPlugin {
 	public void onGameLoaded(Client client) {
 			frameLoader.init(2500);
 			Archive config = client.getCache().createArchive(2, "config");
+			Archive version = client.getCache().createArchive(5, "update list");
+			Archive textures = client.getCache().createArchive(6, "textures");
+
+			if (TextureLoader.instance instanceof TextureLoaderOSRS) {
+				((TextureLoaderOSRS) TextureLoader.instance).init(textures, config);
+			} else {
+				TextureLoader.instance.init(textures);
+			}
+			try {
+				TextureDef.unpackConfig(config);
+			} catch (Exception ignored) {
+				// Some cache variants encode texture metadata differently; keep renderer slots initialized.
+			}
+			TextureDef.ensureLoaded(TextureLoader.instance.count());
+
 			ObjectDefinitionLoader.instance.init(config);
 			FloorDefinitionLoader.instance.init(config);
 			AnimationDefinitionLoader.instance.init(config);
 			GraphicLoader.instance.init(config);
 			VariableBitLoader.instance.init(config);
-			
-			Archive version = client.getCache().createArchive(5, "update list");
 			MapIndexLoader.instance.init(version);
-			
-
-			Archive textures = client.getCache().createArchive(6, "textures");
-			TextureLoader.instance.init(textures);
-		
 	}
 
 	@Override

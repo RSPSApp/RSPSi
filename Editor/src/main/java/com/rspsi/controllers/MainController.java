@@ -4,6 +4,7 @@ import java.util.function.UnaryOperator;
 import java.util.stream.IntStream;
 
 import com.jfoenix.controls.JFXButton;
+import com.rspsi.tools.BuildingGenerator;
 import com.rspsi.util.Settings;
 import javafx.scene.control.*;
 import org.major.map.RenderFlags;
@@ -25,6 +26,7 @@ import com.rspsi.tools.BridgeBuilder;
 import com.rspsi.util.AlwaysSelectToggleGroup;
 import com.rspsi.util.ChangeListenerUtil;
 import com.rspsi.util.FXDialogs;
+import com.rspsi.util.OSUtil;
 
 import javafx.css.PseudoClass;
 import javafx.fxml.FXML;
@@ -82,6 +84,9 @@ public class MainController {
 
 	@FXML
 	private MenuItem newMapButton;
+
+	@FXML
+	private MenuItem genNewMapButton;
 
 	@FXML
 	private Menu openRecentMenu;
@@ -355,10 +360,22 @@ public class MainController {
 
 	@FXML
 	private MenuItem setRelativeHeight;
-	
+
 	@FXML
 	private MenuItem generateBridgeBtn;
-	
+
+	@FXML
+	private MenuItem generateBuildingBtn;
+
+	@FXML
+	private MenuItem generateBuildingBtn2;
+
+	@FXML
+	private MenuItem generateBuildingBtn3;
+
+	@FXML
+	private MenuItem generateBuildingBtn4;
+
 	@FXML
 	private VBox root;
 	
@@ -483,7 +500,12 @@ public class MainController {
 				Options.tileHeightLevel);
 
 		currentHeightSpinner.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 3, 0));
-		windowControls = WindowControls.addWindowControls(application.getStage(), grabBar, controlBox);
+		if (!OSUtil.isMac()) {
+			windowControls = WindowControls.addWindowControls(application.getStage(), grabBar, controlBox);
+		} else {
+			controlBox.setManaged(false);
+			controlBox.setVisible(false);
+		}
 
 		// windowControls.getResizeHelper().setMinWidth(1240);
 		objectSelectionType.getItems().add("ALL");
@@ -628,6 +650,38 @@ public class MainController {
 				BridgeBuilder.buildBridge();
 			} catch (Exception e) {
 				FXDialogs.showError(application.getStage().getOwner(),"Error while generating bridge!", "Message: " + e.getMessage());
+			}
+		});
+
+		generateBuildingBtn.setOnAction(evt -> {
+			try {
+				BuildingGenerator.generateBuilding(1);
+			} catch (Exception e) {
+				FXDialogs.showError(application.getStage().getOwner(),"Error while generating building!", "Message: " + e.getMessage());
+			}
+		});
+
+		generateBuildingBtn2.setOnAction(evt -> {
+			try {
+				BuildingGenerator.generateBuilding(2);
+			} catch (Exception e) {
+				FXDialogs.showError(application.getStage().getOwner(),"Error while generating building!", "Message: " + e.getMessage());
+			}
+		});
+
+		generateBuildingBtn3.setOnAction(evt -> {
+			try {
+				BuildingGenerator.generateBuilding(3);
+			} catch (Exception e) {
+				FXDialogs.showError(application.getStage().getOwner(),"Error while generating building 3!", "Message: " + e.getMessage());
+			}
+		});
+
+		generateBuildingBtn4.setOnAction(evt -> {
+			try {
+				BuildingGenerator.generateBuilding(4);
+			} catch (Exception e) {
+				FXDialogs.showError(application.getStage().getOwner(),"Error while generating building 4!", "Message: " + e.getMessage());
 			}
 		});
 

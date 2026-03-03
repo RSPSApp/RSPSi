@@ -1,5 +1,4 @@
 plugins {
-    id 'io.franzbecker.gradle-lombok' version '5.0.0'
     id "com.github.johnrengelman.shadow" version "8.1.1" apply false
     id 'application'
     id 'java-library'
@@ -29,14 +28,21 @@ allprojects {
 
 subprojects {
 
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(17)
+        }
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+
     apply plugin: 'java-library'
-    apply plugin: 'io.franzbecker.gradle-lombok'
 
-
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
 
     dependencies {
+        compileOnly "org.projectlombok:lombok:1.18.36"
+        annotationProcessor "org.projectlombok:lombok:1.18.36"
 
         // https://mvnrepository.com/artifact/com.google.code.gson/gson
         api group: 'ch.qos.logback', name: 'logback-classic', version: '1.2.10'
@@ -49,11 +55,6 @@ subprojects {
         api 'javax.servlet:javax.servlet-api:4.0.1'
     }
 
-
-    lombok { // optional: values below are the defaults
-        version = "1.18.22"
-    }
-
     compileJava {
         options.fork = true
         options.incremental = true
@@ -61,8 +62,15 @@ subprojects {
 
     apply plugin: 'org.openjfx.javafxplugin'
     javafx {
-        version = "17"
+        version = "21"
         modules = ['javafx.base', 'javafx.fxml', 'javafx.graphics', 'javafx.controls', 'javafx.media', 'javafx.swing']
+    }
+
+    // Keep JavaExec aligned with local JDK17 setup.
+    tasks.withType(JavaExec).configureEach {
+        javaLauncher = javaToolchains.launcherFor {
+            languageVersion = JavaLanguageVersion.of(17)
+        }
     }
 
 }

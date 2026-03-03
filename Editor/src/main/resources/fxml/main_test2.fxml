@@ -59,6 +59,11 @@
                                           <KeyCodeCombination alt="UP" code="N" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
                                        </accelerator>
                                     </MenuItem>
+                                <MenuItem fx:id="genNewMapButton" mnemonicParsing="false" text="Generate New">
+                                    <accelerator>
+                                        <KeyCodeCombination alt="DOWN" code="N" control="DOWN" meta="UP" shift="UP" shortcut="UP" />
+                                    </accelerator>
+                                </MenuItem>
                               <Menu fx:id="openRecentMenu" mnemonicParsing="false" text="Open From">
                                        <items>
                                           <MenuItem fx:id="openCoordinateButton" mnemonicParsing="false" text="Coordinates" />

@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.List;
 
 import com.rspsi.util.FXUtils;
+import com.rspsi.util.OSUtil;
 import javafx.collections.ObservableList;
 import javafx.geometry.Rectangle2D;
 import javafx.stage.Screen;
@@ -53,17 +54,25 @@ public class LauncherWindow extends Application {
 		Parent content = loader.load();
 		Scene scene = new Scene(content);
 
-		scene.setFill(Color.TRANSPARENT);
-		
+		final boolean useCustomChrome = !OSUtil.isMac();
+		if (useCustomChrome) {
+			scene.setFill(Color.TRANSPARENT);
+		}
+
 		primaryStage.setTitle("RSPSi Map Editor Launcher");
-		primaryStage.initStyle(StageStyle.TRANSPARENT);
+		primaryStage.initStyle(useCustomChrome ? StageStyle.TRANSPARENT : StageStyle.DECORATED);
 		primaryStage.setScene(scene);
 		primaryStage.getIcons().add(ResourceLoader.getSingleton().getLogo64());
 
 		primaryStage.show();
-		primaryStage.sizeToScene();
-		FXUtils.centerStage(primaryStage);
-		primaryStage.centerOnScreen();
+		primaryStage.setIconified(false);
+		if (useCustomChrome) {
+			primaryStage.sizeToScene();
+		}
+		if (useCustomChrome) {
+			FXUtils.centerStage(primaryStage);
+			primaryStage.centerOnScreen();
+		}
 		
 		Settings.loadSettings();
 		
@@ -74,9 +83,9 @@ public class LauncherWindow extends Application {
 		
 		controller.getCacheLocation().getEditor().setText(new File(cacheLoc).getAbsolutePath() + File.separator);
 		
-		ChangeListenerUtil.addListener(() -> {
-			primaryStage.sizeToScene();
-		}, controller.getPluginTitlePane().expandedProperty());
+		if (useCustomChrome) {
+			ChangeListenerUtil.addListener(() -> primaryStage.sizeToScene(), controller.getPluginTitlePane().expandedProperty());
+		}
 		
 		
 		controller.getDisablePluginButton().setOnAction(evt -> {
@@ -145,15 +154,21 @@ public class LauncherWindow extends Application {
 			primaryStage.hide();
 			MainWindow window = new MainWindow();
 			Stage otherStage = new Stage();
-			otherStage.setX(primaryStage.getX());
-			otherStage.setY(primaryStage.getY());
+			if (useCustomChrome) {
+				otherStage.setX(primaryStage.getX());
+				otherStage.setY(primaryStage.getY());
+			}
 			window.start(otherStage);
 		});
 
 		
 		populatePlugins();
-		WindowControls controls = WindowControls.addWindowControlsFixed(primaryStage, controller.getTopBar(), controller.getControlBox());
-		primaryStage.sizeToScene();
+		if (useCustomChrome) {
+			WindowControls controls = WindowControls.addWindowControlsFixed(primaryStage, controller.getTopBar(), controller.getControlBox());
+		}
+		if (useCustomChrome) {
+			primaryStage.sizeToScene();
+		}
 
 	}
 	

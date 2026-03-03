@@ -126,15 +126,16 @@ public class ObjectDefinitionLoaderOSRS extends ObjectDefinitionLoader {
 				definition.setAmbientLighting(buffer.readByte());
 			} else if (opcode == 39) {
 				definition.setLightDiffusion(buffer.readByte());
-			} else if (opcode >= 30 && opcode < 39) {
-				String[] interactions = new String[10];
-				
-				interactions[opcode - 30] = buffer.readString();
-				if (interactions[opcode - 30].equalsIgnoreCase("hidden")) {
-					interactions[opcode - 30] = null;
-				}
-				definition.setInteractions(interactions);
-			} else if (opcode == 40) {
+				} else if (opcode >= 30 && opcode < 35) {
+					if (definition.getInteractions() == null) {
+						definition.setInteractions(new String[5]);
+					}
+					String[] interactions = definition.getInteractions();
+					interactions[opcode - 30] = buffer.readString();
+					if (interactions[opcode - 30].equalsIgnoreCase("hidden")) {
+						interactions[opcode - 30] = null;
+					}
+				} else if (opcode == 40) {
 				int count = buffer.readUByte();
 				int[] originalColours = new int[count];
 				int[] replacementColours = new int[count];

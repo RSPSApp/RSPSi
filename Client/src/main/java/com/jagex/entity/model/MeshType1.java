@@ -218,7 +218,7 @@ public class MeshType1 extends Mesh {
                 this.faceTransparencies[var49] = var5.readByte();
                 // TODO might still need this
                 if (this.faceTransparencies[var49] < 0) {
-                    this.faceTransparencies[var49] = (256 + this.faceTransparencies[var40]);
+                    this.faceTransparencies[var49] = (256 + this.faceTransparencies[var49]);
                 }
             }
 
@@ -227,7 +227,7 @@ public class MeshType1 extends Mesh {
             }
 
             if (var16 == 1) {
-                this.faceMaterial[var49] = (byte) (var7.readUShort() - 1);
+                this.faceMaterial[var49] = var7.readUShort() - 1;
             }
 
             if (this.faceTexture != null && this.faceMaterial[var49] != -1) {

@@ -24,6 +24,9 @@ import lombok.Setter;
 @Slf4j
 public class Mesh extends Renderable {
 
+    private static final boolean[] MISSING_TEXTURE_LOGGED = new boolean[65536];
+    private static int missingTextureLogCount = 0;
+
 	// Class30_Sub2_Sub4_Sub6
 
 	public byte[] textureMap;
@@ -1080,13 +1083,7 @@ public class Mesh extends Renderable {
 				rasterizer.currentAlpha = faceTransparencies[index];
 			}
 		}
-		int type;
-		if (triangleInfo == null) {
-			type = faceMaterial != null && faceMaterial[index] != -1 ? 2 : 0;
-		} else {
-			type = triangleInfo[index] & 3;
-
-		}
+		int type = getFaceType(index);
 		boolean ignoreTextures = translucent || selected;
 
 		if (type == 0 && !ignoreTextures) {
@@ -1243,12 +1240,7 @@ public class Mesh extends Renderable {
 						|| j5 > rasterizer.getMaxRight()) {
 					rasterizer.restrictEdges = true;
 				}
-				int type;
-				if (triangleInfo == null) {
-					type = faceMaterial != null && faceMaterial[index] != -1 ? 2 : 0;
-				} else {
-					type = triangleInfo[index] & 3;
-				}
+				int type = getFaceType(index);
 
 				if (type == 0 && !ignoreTextures) {
 					rasterizer.drawShadedTriangle(i7, j7, k7, j3, j4, j5, rasterizer.anIntArray1680[0], rasterizer.anIntArray1680[1],
@@ -1311,12 +1303,7 @@ public class Mesh extends Renderable {
 						|| rasterizer.anIntArray1678[3] < 0 || rasterizer.anIntArray1678[3] > rasterizer.getMaxRight()) {
 					rasterizer.restrictEdges = true;
 				}
-				int type;
-				if (triangleInfo == null) {
-					type = faceMaterial != null && faceMaterial[index] != -1 ? 2 : 0;
-				} else {
-					type = triangleInfo[index] & 3;
-				}
+				int type = getFaceType(index);
 				if (type == 0 && !ignoreTextures) {
 					rasterizer.drawShadedTriangle(i7, j7, k7, j3, j4, j5, rasterizer.anIntArray1680[0], rasterizer.anIntArray1680[1],
 							rasterizer.anIntArray1680[2]);
@@ -1390,6 +1377,17 @@ public class Mesh extends Renderable {
 				}
 			}
 		}
+	}
+
+	private int getFaceType(int index) {
+		int type = triangleInfo == null ? 0 : triangleInfo[index] & 3;
+		if (faceMaterial != null && index >= 0 && index < faceMaterial.length && faceMaterial[index] != -1) {
+			// Prefer textured rendering when a valid material is present.
+			if (type == 0 || type == 1) {
+				type = 2;
+			}
+		}
+		return type;
 	}
 
 	public void pitch(int theta) {
@@ -1876,21 +1874,17 @@ public class Mesh extends Renderable {
 			return;
 		}
 
-		for (int material : faceMaterial) {
-			if (material > TextureLoader.instance.count()) {
-				return;
-			}
-		}
-
 		if (triangleInfo == null) {
 			triangleInfo = new int[triangleCount];
 		}
+		int maxTextureId = TextureLoader.instance == null ? 0 : TextureLoader.instance.count();
 
 		for (int i = 0; i < triangleCount; i++) {
-			if (faceMaterial[i] != -1 && faceTexture[i] >= 0) {
+			int material = faceMaterial[i];
+			if (material >= 0 && material < maxTextureId && faceTexture[i] >= 0) {
 				int mask = 2 + (faceTexture[i] << 2);
 				triangleInfo[i] = mask;
-				triangleColors[i] = faceMaterial[i];
+				triangleColors[i] = material;
 			}
 		}
 	}
@@ -1909,7 +1903,13 @@ public class Mesh extends Renderable {
                     this.triangleColors[i] = 65535;
                     triangleInfo[i] = 0;
                 }
-                if (textureIds[i] >= max || textureIds[i] < 0 || textureIds[i] == 39) {
+                if (textureIds[i] >= max || textureIds[i] < 0) {
+                    if (textureIds[i] >= 0 && textureIds[i] < MISSING_TEXTURE_LOGGED.length
+                            && !MISSING_TEXTURE_LOGGED[textureIds[i]] && missingTextureLogCount < 32) {
+                        MISSING_TEXTURE_LOGGED[textureIds[i]] = true;
+                        missingTextureLogCount++;
+                        log.warn("Missing texture id {} (max loaded {}) on model {}", textureIds[i], max, id);
+                    }
                 	triangleInfo[i] = 0;
                     continue;
                 }
@@ -2043,11 +2043,11 @@ public class Mesh extends Renderable {
 	public void retexture(int found, int replace) {
 		if(faceMaterial != null)
 			for (int face = 0; face < faceMaterial.length; face++) {
-				if (faceMaterial[face] == found) {
-					log.info("[{}] {} | Replaced {} with {}", id, revision, faceMaterial[face], replace);
-					faceMaterial[face] = replace;
+					if (faceMaterial[face] == found) {
+						log.debug("[{}] {} | Replaced {} with {}", id, revision, faceMaterial[face], replace);
+						faceMaterial[face] = replace;
+					}
 				}
-			}
 
 	}
 

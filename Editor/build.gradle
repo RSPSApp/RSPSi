@@ -14,7 +14,6 @@ buildscript {
 
 apply plugin: 'application'
 apply plugin: 'java-library'
-apply plugin: 'com.github.johnrengelman.shadow'
 apply plugin: 'java'
 apply plugin: 'org.beryx.runtime'
 
@@ -34,8 +33,6 @@ dependencies {
 		exclude group: 'org.openjfx'
 	}
 }
-
-mainClassName = "com.rspsi.LauncherWindow"
 
 runtime {
 	options = ['--strip-debug', '--compress', '2', '--no-header-files', '--no-man-pages']
@@ -98,6 +95,6 @@ runtime {
 }
 
 application {
-	mainClassName = "com.rspsi.LauncherWindow"
+	mainClass = "com.rspsi.LauncherWindow"
 	applicationName = 'RSPSi'
 }

@@ -86,6 +86,10 @@ public class MeshLoader {
 		} catch(Exception ex){
 			ex.printStackTrace();
 		}
+		if (mesh == null) {
+			awaitingLoad.remove(Integer.valueOf(id));
+			return null;
+		}
 		mesh.id = id;
 		mesh.revision = revision;
 

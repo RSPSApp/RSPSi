@@ -2097,9 +2097,6 @@ public class SceneGraph {
 						brushSize -= 1;
 					}
 
-
-					getMapRegion().setHeights();//For beyond edge updates
-
 					if (!mouseIsDown && mouseWasDown) {
 						tileQueue.clear();
 						System.out.println("MWD");
@@ -2121,6 +2118,158 @@ public class SceneGraph {
 		}
 	}
 
+	/**
+	 * Calculates the lowest plane in any given List of SceneTileData
+	 * @param sceneGraphData
+	 * @return
+	 */
+	private int getLowestPlane(List<SceneTileData> sceneGraphData) {
+		int lowestPlane = 4;
+		for (SceneTileData data : sceneGraphData)
+			if (data.getZ() < lowestPlane)
+				lowestPlane = data.getZ();
+
+		return lowestPlane;
+	}
+
+	/**
+	 * Function to place a List of SceneTileData at a specified location on the current map
+	 *
+	 * @param tileX
+	 * @param tileY
+	 * @param plane
+	 * @param sceneGraphData
+	 */
+	public void placeSceneTileData(int tileX, int tileY, int plane, List<SceneTileData> sceneGraphData) {
+		int lowestPlane = this.getLowestPlane(sceneGraphData);
+
+		Function<Location, Optional<SceneTileData>> getTileAt = (loc) -> {
+			return sceneGraphData.stream().filter(data -> data.getLocation().equals(loc)).findFirst();
+		};
+
+		for (SceneTileData data : sceneGraphData) {
+			int savedX = tileX + data.getX();
+			int savedY = tileY + data.getY();
+			int zPos = Options.currentHeight.get() + (data.getZ() - lowestPlane);
+			if (zPos >= 4) continue;
+
+			int angle = 90 * Options.rotation.get();
+			Point2D result = new Point2D.Double();
+			AffineTransform rotation = new AffineTransform();
+			double angleInRadians = angle * Math.PI / 180;
+			rotation.rotate(angleInRadians, tileX, tileY);
+			rotation.transform(new Point2D.Double(savedX, savedY), result);
+			int xPos = (int) result.getX();
+
+			int yPos = (int) result.getY();
+
+			if (xPos > width - 1 || xPos < 0 || yPos > length - 1 || yPos < 0) {
+				continue;
+			}
+			if (tiles[zPos][xPos][yPos] == null) {
+				tiles[zPos][xPos][yPos] = new SceneTile(xPos, yPos, zPos);
+			}
+
+			tiles[zPos][xPos][yPos].hasUpdated = true;
+			if (currentState.isPresent()) {
+				ImportTileState tileState = new ImportTileState(xPos, yPos, plane);
+				tileState.preserve();
+				((ImportChange) currentState.get()).preserveTileState(tileState);
+			}
+
+			if (data.getOverlayId() != -1) {
+				getMapRegion().overlays[zPos][xPos][yPos] = data.getOverlayId();
+				getMapRegion().overlayShapes[zPos][xPos][yPos] = data.getOverlayType();
+				getMapRegion().overlayOrientations[zPos][xPos][yPos] = (byte) ((data.getOverlayOrientation()
+						- Options.rotation.get()) & 3);
+			}
+
+			if (data.getUnderlayId() != -1) {
+				getMapRegion().underlays[zPos][xPos][yPos] = data.getUnderlayId();
+			}
+			if (data.getTileHeight() != -1) {
+				if (zPos == data.getZ()) {
+					getMapRegion().tileHeights[zPos][xPos][yPos] = data.getTileHeight();
+				} else if (data.getZ() <= 0) {
+					getMapRegion().tileHeights[zPos][xPos][yPos] = getMapRegion().tileHeights[zPos - 1][xPos][yPos] + data.getTileHeight();
+				} else {
+					Optional<SceneTileData> optionalData = getTileAt.apply(new Location(xPos, yPos, data.getZ() - 1));
+
+					optionalData.ifPresent(originalDataBelow -> {
+						getMapRegion().tileHeights[zPos][xPos][yPos] = originalDataBelow.getTileHeight() - data.getTileHeight();
+					});
+				}
+
+				getMapRegion().manualTileHeight[zPos][xPos][yPos] = 1;
+
+			}
+			if (data.getTileFlag() != -1) {
+				getMapRegion().tileFlags[zPos][xPos][yPos] = data.getTileFlag();
+			}
+
+		}
+
+		commitChanges();
+		tileQueue.clear();
+		getMapRegion().updateTiles();
+		//Then spawn the objects
+		Options.currentTool.set(ToolType.SPAWN_OBJECT);
+		this.initChanges();
+		for (SceneTileData data : sceneGraphData) {
+			int savedX = tileX + data.getX();
+			int savedY = tileY + data.getY();
+			int zPos = Options.currentHeight.get() + (data.getZ() - lowestPlane);
+			if (zPos >= 4) continue;
+
+			boolean heightDifferent = data.getZ() != Options.currentHeight.get();
+			int angle = 90 * (Options.rotation.get() & 3);
+			Point2D result = new Point2D.Double();
+			AffineTransform rotation = new AffineTransform();
+			double angleInRadians = angle * Math.PI / 180;
+			rotation.rotate(angleInRadians, tileX, tileY);
+			rotation.transform(new Point2D.Double(savedX, savedY), result);
+			int xPos = (int) result.getX();
+
+			int yPos = (int) result.getY();
+			if (xPos > width - 1 || xPos < 0 || yPos > length - 1 || yPos < 0) {
+				continue;
+			}
+			if (tiles[zPos][xPos][yPos] == null) {
+				tiles[zPos][xPos][yPos] = new SceneTile(xPos, yPos, zPos);
+			}
+			tiles[zPos][xPos][yPos].hasUpdated = true;
+
+
+			if (data.getGameObjectIds() != null) {
+				for (int i = 0; i < data.getGameObjectIds().length; i++) {
+
+					this.addObject(xPos, yPos, zPos, data.getGameObjectIds()[i],
+							data.getGameObjectConfigs()[i] >> 2,
+							((data.getGameObjectConfigs()[i] & 0xff) - (Options.rotation.get())) & 3, false);
+
+				}
+			}
+			if (data.getGroundDecoId() != -1) {
+
+				this.addObject(xPos, yPos, zPos, data.getGroundDecoId(), data.getGroundDecoConfig() >> 2,
+						((data.getGroundDecoConfig() & 0xff) - (Options.rotation.get())) & 3, false);
+			}
+			if (data.getWallId() != -1) {
+				this.addObject(xPos, yPos, zPos, data.getWallId(), data.getWallConfig() >> 2,
+						((data.getWallConfig() & 0xff) - (Options.rotation.get())) & 3, false);
+			}
+			if (data.getWallDecoId() != -1) {
+				this.addObject(xPos, yPos, zPos, data.getWallDecoId(), data.getWallDecoConfig() >> 2,
+						((data.getWallDecoConfig() & 0xff) - (Options.rotation.get())) & 3, false);
+			}
+
+		}
+		commitChanges();
+		Options.currentTool.set(ToolType.IMPORT_SELECTION);
+		SceneGraph.setMouseIsDown(false);
+		this.shadeObjects(64, -50, -10, -50, 768);
+
+	}
 	public void brushSelection(double brushSize, boolean doHighlight, BiConsumer<Integer, Integer> onMouseDown, BiConsumer<Integer, Integer> onHighlight, Runnable onEnd) {
 		int tileX = hoveredTileX;
 		int tileY = hoveredTileY;
@@ -2308,6 +2457,12 @@ public class SceneGraph {
 		transformInput();
 		Options.currentTool.set(ToolType.IMPORT_SELECTION);
 
+	}
+
+	public LinkedList<SceneTileData> readJMAP(File file) throws IOException {
+		ObjectMapper mapper = JsonUtil.getDefaultMapper();
+		return mapper.readValue(file, new TypeReference<LinkedList<SceneTileData>>() {
+		});
 	}
 
 	public void transformInput() {
@@ -4860,6 +5015,9 @@ public class SceneGraph {
 		setTileHeights(getSelectedTiles(), false);
 	}
 
+	/**
+	 *
+	 */
 	public void setSelectedUnderlays() {
 		setTileUnderlays(getSelectedTiles());
 	}
@@ -4907,8 +5065,6 @@ public class SceneGraph {
 
 		});
 
-		getMapRegion().setHeights();//For beyond edge updates
-
 		tileQueue.clear();
 		this.shadeObjects(64, -50, -10, -50, 768);
 		getMapRegion().updateTiles();
@@ -4946,6 +5102,10 @@ public class SceneGraph {
 	}
 
 	public void setTileOverlays(List<SceneTile> tiles) {
+		this.setTileOverlays(tiles, 1);
+	}
+
+	public void setTileOverlays(List<SceneTile> tiles, int heightLevels) {
 		ToolType currentTool = Options.currentTool.get();
 		Options.currentTool.set(ToolType.PAINT_OVERLAY);
 		if (!this.currentStateCorrect()) {
@@ -5023,6 +5183,14 @@ public class SceneGraph {
 
 		}
 
+	}
+
+	public int getCameraXTile() {
+		return xCameraTile;
+	}
+
+	public int getCameraYTile() {
+		return yCameraTile;
 	}
 
 	public void rotateSelectedObjects(int rotateDir) {

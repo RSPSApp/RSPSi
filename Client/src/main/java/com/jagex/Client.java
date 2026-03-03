@@ -1,8 +1,11 @@
 package com.jagex;
 
 import com.jagex.map.SceneGraph;
+import com.jagex.map.SceneTileData;
+import com.jagex.map.procedural.Biome;
 import com.jagex.map.tile.SceneTile;
 import com.rspsi.options.KeyboardState;
+import com.rspsi.tools.BuildingGenerator.*;
 import javafx.scene.input.KeyCode;
 import org.displee.cache.index.archive.Archive;
 import org.displee.utilities.GZIPUtils;
@@ -14,9 +17,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
+import java.util.*;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.concurrent.locks.ReentrantLock;
@@ -70,6 +71,8 @@ import javafx.scene.text.FontWeight;
 import javafx.scene.text.TextAlignment;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+
+import static com.rspsi.misc.IntUtils.percentageOf;
 
 
 @Slf4j
@@ -657,8 +660,13 @@ public final class Client implements Runnable {
 		loadState = LoadState.LOADING_MAP;
 		loadingStartTime = System.currentTimeMillis();
 	}
-	
-	public final void loadNew(int chunkXLength, int chunkYLength, int[][] heights) {
+
+	private byte waterOverlay = (byte) 6;
+
+	// TOBY: This generates new maps
+	public final void loadNew(int chunkXLength, int chunkYLength, int[][] heights, int minHeight, int maxHeight, int[][] treeMap) {
+
+		Biome biome = Biome.FREMMINIK_LAKES;
 
 		baseX = 0;
 		baseY = 0;
@@ -693,7 +701,8 @@ public final class Client implements Runnable {
 					chunk.offsetX = 64 * chunkX;
 					chunk.offsetY = 64 * chunkY;
 					chunk.setNewMap(true);
-					
+					chunk.setBiome(biome);
+					chunk.setTreeMap(treeMap);
 					chunk.tileMapId = fileId++;
 					chunk.objectMapId = fileId++;
 					
@@ -703,6 +712,7 @@ public final class Client implements Runnable {
 					pendingChunks.add(chunk);
 			}
 		}
+
 		int width = (int) gameCanvas.getWidth();
 		int height = (int) gameCanvas.getHeight();
 		int[] ai = new int[64];
@@ -712,11 +722,322 @@ public final class Client implements Runnable {
 			int i9 = Constants.SINE[theta];
 			ai[i8] = l8 * i9 >> 16;
 		}
+
 		sceneGraph.method310(500, 800, width, height, ai);
 		loadState = LoadState.LOADING_MAP;
 		loadingStartTime = System.currentTimeMillis();
 	}
-	
+
+	// Returns a 2d array of overlay ids of the surrounding tiles for a given x and y
+	private byte[][] getSurroundingOverlayMatrix(int x, int y, int maxX, int maxY) {
+		byte offMap = (byte) -1;
+
+		return new byte[][] {
+				new byte[] {
+						x > 0 && y < maxY ? (byte) mapRegion.overlays[0][x-1][y+1] : offMap,
+						y < maxY ? (byte) mapRegion.overlays[0][x][y+1] : offMap,
+						x < maxX && y < maxY ? (byte) mapRegion.overlays[0][x+1][y+1] : offMap
+				},
+				new byte[] {
+						x > 0 ? (byte) mapRegion.overlays[0][x-1][y] : offMap,
+						(byte) mapRegion.overlays[0][x][y],
+						x < maxX ? (byte) mapRegion.overlays[0][x+1][y] : offMap
+				},
+				new byte[] {
+						x > 0 && y > 0 ? (byte) mapRegion.overlays[0][x-1][y-1] : offMap,
+						y > 0 ? (byte) mapRegion.overlays[0][x][y-1] : offMap,
+						x < maxX && y > 0 ? (byte) mapRegion.overlays[0][x+1][y-1] : offMap
+				},
+		};
+	}
+
+	private void setOverlayShapeForTile(int x, int y, int maxX, int maxY) {
+		byte shape = (byte) 0, orientation = (byte) 0;
+
+		byte offMap = (byte) -1; // Flag indicates this tile is out of map bounds
+
+		byte ground = (byte) 0;
+		byte water = (byte) 6;
+
+		// Create a grid of overlays around this square
+		byte[][] localOverlays = getSurroundingOverlayMatrix(x, y, maxX, maxY);
+
+		//68172.68859943567
+
+		byte diagonal = (byte) 1,
+		smallCorner = (byte) 8,
+		curved = (byte) 10,
+		mostlyGround = (byte) 11;
+
+
+		// Compare the overlay grid with pre defined grids
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{ground, water, water},
+				new byte[]{ground, water, water},
+				new byte[]{ground, ground, ground}
+		})) {
+			shape = diagonal;
+			orientation = (byte) 2;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{water, ground, ground},
+				new byte[]{water, water, ground},
+				new byte[]{ground, water, water}
+		})) {
+			shape = curved;
+			orientation = (byte) 1;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{water, water, ground},
+				new byte[]{ground, water, water},
+				new byte[]{ground, ground, ground}
+		})) {
+			shape = curved;
+			orientation = (byte) 3;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{ground, ground, water},
+				new byte[]{ground, water, water},
+				new byte[]{ground, water, water}
+		})) {
+			shape = curved;
+			orientation = (byte) 0;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{ground, water, water},
+				new byte[]{ground, water, water},
+				new byte[]{ground, ground, water}
+		})) {
+			shape = diagonal;
+			orientation = (byte) 2;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{water, water, water},
+				new byte[]{ground, water, water},
+				new byte[]{ground, ground, water}
+		})) {
+			shape = diagonal;
+			orientation = (byte) 2;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{water, water, water},
+				new byte[]{water, water, ground},
+				new byte[]{ground, ground, ground}
+		})) {
+			shape = diagonal;
+			orientation = (byte) 1;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{water, water, water},
+				new byte[]{water, water, ground},
+				new byte[]{water, ground, ground}
+		})) {
+			shape = diagonal;
+			orientation = (byte) 1;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{ground, ground, ground},
+				new byte[]{ground, water, ground},
+				new byte[]{ground, water, water}
+		})) {
+			shape = mostlyGround;
+			orientation = (byte) 0;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{ground, water, ground},
+				new byte[]{ground, water, ground},
+				new byte[]{ground, ground, ground}
+		})) {
+			shape = mostlyGround;
+			orientation = (byte) 2;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{ground, ground, ground},
+				new byte[]{ground, water, ground},
+				new byte[]{ground, water, ground}
+		})) {
+			shape = mostlyGround;
+			orientation = (byte) 0;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{water, water, ground},
+				new byte[]{water, water, ground},
+				new byte[]{ground, ground, ground}
+		})) {
+			shape = smallCorner;
+			orientation = (byte) 3;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{water, ground, ground},
+				new byte[]{water, water, ground},
+				new byte[]{water, water, ground}
+		})) {
+			shape = diagonal;
+			orientation = (byte) 0;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{water, ground, ground},
+				new byte[]{water, water, ground},
+				new byte[]{water, water, water}
+		})) {
+			shape = diagonal;
+			orientation = (byte) 0;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{water, water, ground},
+				new byte[]{water, water, ground},
+				new byte[]{water, ground, ground}
+		})) {
+			shape = diagonal;
+			orientation = (byte) 1;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{ground, ground, ground},
+				new byte[]{water, water, ground},
+				new byte[]{water, water, water}
+		})) {
+			shape = curved;
+			orientation = (byte) 1;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{ground, ground, ground},
+				new byte[]{water, water, ground},
+				new byte[]{water, water, ground}
+		})) {
+			shape = curved;
+			orientation = (byte) 0;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{ground, ground, ground},
+				new byte[]{water, water, ground},
+				new byte[]{water, water, ground}
+		})) {
+			shape = curved;
+			orientation = (byte) 1;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{water, water, water},
+				new byte[]{ground, water, water},
+				new byte[]{ground, ground, ground}
+		})) {
+			shape = curved;
+			orientation = (byte) 3;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{ground, ground, ground},
+				new byte[]{ground, water, water},
+				new byte[]{ground, water, water}
+		})) {
+			shape = curved;
+			orientation = (byte) 0;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{ground, ground, ground},
+				new byte[]{ground, water, ground},
+				new byte[]{water, water, ground}
+		})) {
+			shape = mostlyGround;
+			orientation = (byte) 0;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{ground, water, water},
+				new byte[]{ground, water, ground},
+				new byte[]{ground, ground, ground}
+		})) {
+			shape = mostlyGround;
+			orientation = (byte) 2;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{water, ground, ground},
+				new byte[]{water, water, ground},
+				new byte[]{ground, ground, ground}
+		})) {
+			shape = mostlyGround;
+			orientation = (byte) 1;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{ground, ground, ground},
+				new byte[]{water, water, ground},
+				new byte[]{ground, ground, ground}
+		})) { //eh5
+			shape = mostlyGround;
+			orientation = (byte) 1;
+		}
+
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{ground, ground, water},
+				new byte[]{ground, water, water},
+				new byte[]{ground, ground, ground}
+		})) {
+			shape = mostlyGround;
+			orientation = (byte) 3;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{ground, ground, water},
+				new byte[]{ground, water, water},
+				new byte[]{water, water, water}
+		})) {
+			shape = diagonal;
+			orientation = (byte) 3;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{ground, ground, ground},
+				new byte[]{ground, water, water},
+				new byte[]{water, water, water}
+		})) {
+			shape = diagonal;
+			orientation = (byte) 3;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{ground, ground, ground},
+				new byte[]{ground, water, ground},
+				new byte[]{water, water, water}
+		})) {
+			shape = mostlyGround;
+			orientation = (byte) 0;
+		}
+
+		if (Arrays.deepEquals(localOverlays, new byte[][]{
+				new byte[]{water, ground, ground},
+				new byte[]{water, water, ground},
+				new byte[]{water, ground, ground}
+		})) {
+			shape = mostlyGround;
+			orientation = (byte) 1;
+		}
+
+
+
+		mapRegion.overlayShapes[0][x][y] = shape;
+		mapRegion.overlayOrientations[0][x][y] = orientation;
+	}
 
 	public final void loadChunks(List<Chunk> chunks) {
 		this.chunks.clear();
@@ -995,21 +1316,23 @@ public final class Client implements Runnable {
 		if (Options.showDebug.get()) {
 			int c = (int) gameCanvas.getWidth() - 20;
 			int k = 40;
+			/*
 			int i1 = 0xffff00;
 			if (fps < 15) {
 				i1 = 0xff0000;
-			}
+			}*/
+
 			if(this.getCurrentChunk() != null) {
 				Chunk chunk = this.getCurrentChunk();
-				k += TextRenderUtils.renderLeft(gameImageBuffer, "WorldX: " + (chunk.regionX * 64) + " WorldY: " + (chunk.regionY * 64), c, k, i1);
+				k += TextRenderUtils.renderLeft(gameImageBuffer, "WorldX: " + (chunk.regionX * 64) + " WorldY: " + (chunk.regionY * 64), c, k, 0xffff00);
 			}
-
+/*
 			k += TextRenderUtils.renderLeft(gameImageBuffer, "Fps: " + fps, c, k, i1);
 			Runtime runtime = Runtime.getRuntime();
 			int memory = (int) ((runtime.totalMemory() - runtime.freeMemory()) / 1024);
 			i1 = 0xffff00;
 			k += TextRenderUtils.renderLeft(gameImageBuffer, "Mem: " + memory / 1024 + "MB", c, k, 0xffff00);
-
+*/
 			k += TextRenderUtils.renderLeft(gameImageBuffer, "Chunk map files:  "  + getCurrentChunk().tileMapName + " " + getCurrentChunk().objectMapName + " ", c, k, 0xffff00);
 
 			k += TextRenderUtils.renderLeft(gameImageBuffer, "Mouse: " + mouseEventX + "," + mouseEventY + "", c, k, 0xffff00);
@@ -1027,6 +1350,7 @@ public final class Client implements Runnable {
 
 			k += TextRenderUtils.renderLeft(gameImageBuffer, "Hover UID: " + hoveredUID + "", c, k, 0xffff00);
 
+			/*
 			if(sceneGraph.tiles[Options.currentHeight.get()][sceneGraph.hoveredTileX][sceneGraph.hoveredTileY] != null) {
 				SceneTile tile = sceneGraph.tiles[Options.currentHeight.get()][sceneGraph.hoveredTileX][sceneGraph.hoveredTileY];
 				k += TextRenderUtils.renderLeft(gameImageBuffer, "Simple Data: " + (tile.simple != null ? tile.simple.toString() : "") , c, k, 0xffff00);
@@ -1054,6 +1378,8 @@ public final class Client implements Runnable {
 
 				k += TextRenderUtils.renderLeft(gameImageBuffer, "Pos: " + x + ", " + y, c, k,  0xffff00);
 			}
+
+ */
 
 		}
 	}
@@ -1147,6 +1473,23 @@ public final class Client implements Runnable {
 					sceneGraph.renderScene(xCameraPos, yCameraPos, xCameraCurve, zCameraPos, currentPlane, yCameraCurve);
 					// xCameraPos, yCameraPos, xCameraCurve, zCameraPos, j, yCameraCurve
 
+					/*
+					if (chunk.isNewMap() && !chunk.hasGenerated) {
+						int num_houses = 5;
+						int built_houses = 0;
+
+						try {
+							LinkedList<SceneTileData> sceneTileGraph = sceneGraph.readJMAP(new File("./Editor/prefabs/house.jmap"));
+							int jmapWidth = sceneTileGraph.getLast().getX(),
+									jmapHeight = sceneTileGraph.getLast().getY();
+
+							sceneGraph.placeSceneTileData((int) (Math.random() * 64D), (int) (Math.random() * 64D), 0, sceneTileGraph);
+							chunk.hasGenerated = true;
+						} catch (IOException e) {
+							e.printStackTrace();
+						}
+					}
+			*/
 				} catch (Exception ex) {
 					ex.printStackTrace();
 				}
@@ -1286,14 +1629,20 @@ public final class Client implements Runnable {
 		SceneGraph.clearStates();
 		sceneGraph.reset();
 
-	
-		for (Chunk chunk : chunks) {
+		boolean loadFailed = false;
+		for (Chunk chunk : Lists.newArrayList(chunks)) {
 			try {
 				chunk.loadChunk();
 			} catch (Exception exception) {
 				exception.printStackTrace();
-				chunks.clear();
+				loadFailed = true;
+				break;
 			}
+		}
+		if (loadFailed) {
+			chunks.clear();
+			loadState = LoadState.ERROR;
+			return;
 		}
 		mapRegion.method171(sceneGraph);
 
