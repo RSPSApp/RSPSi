@@ -2,7 +2,6 @@ package com.jagex;
 
 import com.jagex.map.SceneGraph;
 import com.jagex.map.SceneTileData;
-import com.jagex.map.procedural.Biome;
 import com.jagex.map.tile.SceneTile;
 import com.rspsi.options.KeyboardState;
 import com.rspsi.tools.BuildingGenerator.*;
@@ -49,6 +48,7 @@ import com.jagex.map.MapRegion;
 import com.jagex.net.ResourceProvider;
 import com.jagex.net.ResourceResponse;
 import com.jagex.util.Constants;
+import com.jagex.util.MultiMapEncoder;
 import com.jagex.util.ObjectKey;
 import com.jagex.util.TextRenderUtils;
 import com.rspsi.cache.CacheFileType;
@@ -589,12 +589,18 @@ public final class Client implements Runnable {
 	
 	private Chunk lastChunk;
 
+	private void resetChunkLoadState() {
+		chunks.clear();
+		pendingChunks.clear();
+		lastChunk = null;
+	}
+
 	public final void loadCoordinates(int wX, int wY, int chunkXLength, int chunkYLength) {
 		baseX = wX;
 		baseY = wY;
 
 		fullMapCanvas = new DisplayCanvas(chunkXLength * Options.mapRegionSize.get(), chunkYLength * Options.mapRegionSize.get(), false);
-		chunks.clear();
+		resetChunkLoadState();
 		
 		gameImageBuffer.initializeRasterizer();
 		gameImageBuffer.clear(0);
@@ -656,73 +662,6 @@ public final class Client implements Runnable {
 			int i9 = Constants.SINE[theta];
 			ai[i8] = l8 * i9 >> 16;
 		}
-		sceneGraph.method310(500, 800, width, height, ai);
-		loadState = LoadState.LOADING_MAP;
-		loadingStartTime = System.currentTimeMillis();
-	}
-
-	private byte waterOverlay = (byte) 6;
-
-	// TOBY: This generates new maps
-	public final void loadNew(int chunkXLength, int chunkYLength, int[][] heights, int minHeight, int maxHeight, int[][] treeMap) {
-
-		Biome biome = Biome.FREMMINIK_LAKES;
-
-		baseX = 0;
-		baseY = 0;
-		fullMapCanvas = new DisplayCanvas(chunkXLength * Options.mapRegionSize.get(), chunkYLength * Options.mapRegionSize.get(), false);
-		chunks.clear();
-		
-		gameImageBuffer.initializeRasterizer();
-		gameImageBuffer.clear(0);
-		TextRenderUtils.renderCenter(gameImageBuffer.getGraphics(), 
-				"Loading map, this may take a few seconds...", gameCanvas.getWidth() / 2, gameCanvas.getHeight() / 2 - 20, 0xFFFFFF);
-		// frameFont.renderCentre(256, 150, "Loading - please wait.", 0xffffff);
-		gameImageBuffer.finalize();
-		drawGameImage();
-		xCameraPos = 0;
-		yCameraPos = 0;
-		sceneGraph = new SceneGraph(64 * (chunkXLength), 64 * (chunkYLength), 4);
-		mapRegion = new MapRegion(sceneGraph, 64 * (chunkXLength), 64 * (chunkYLength));
-		mapRegion.tileHeights[0] = heights;
-		for(int x = 0;x<mapRegion.underlays[0].length;x++)
-			Arrays.fill(mapRegion.underlays[0][x], (short)1);
-		for(int x = 0;x<mapRegion.manualTileHeight[0].length;x++)
-			Arrays.fill(mapRegion.manualTileHeight[0][x], (byte)1);
-		mapRegion.setHeights();
-		int fileId = 0;
-		for (int chunkX = 0; chunkX < chunkXLength; chunkX++) {
-			for (int chunkY = 0; chunkY < chunkYLength; chunkY++) {
-					anInt984 = 0;
-					int cX = 1000;
-					int cY = 1000;
-					int hash = (cX << 8) + cY;
-					Chunk chunk = new Chunk(hash);
-					chunk.offsetX = 64 * chunkX;
-					chunk.offsetY = 64 * chunkY;
-					chunk.setNewMap(true);
-					chunk.setBiome(biome);
-					chunk.setTreeMap(treeMap);
-					chunk.tileMapId = fileId++;
-					chunk.objectMapId = fileId++;
-					
-					chunk.fillNamesFromIds();
-
-					chunk.init(this);
-					pendingChunks.add(chunk);
-			}
-		}
-
-		int width = (int) gameCanvas.getWidth();
-		int height = (int) gameCanvas.getHeight();
-		int[] ai = new int[64];
-		for (int i8 = 0; i8 < 64; i8++) {
-			int theta = i8 * 32 + 15;
-			int l8 = 600 + theta * 3;
-			int i9 = Constants.SINE[theta];
-			ai[i8] = l8 * i9 >> 16;
-		}
-
 		sceneGraph.method310(500, 800, width, height, ai);
 		loadState = LoadState.LOADING_MAP;
 		loadingStartTime = System.currentTimeMillis();
@@ -1040,7 +979,7 @@ public final class Client implements Runnable {
 	}
 
 	public final void loadChunks(List<Chunk> chunks) {
-		this.chunks.clear();
+		resetChunkLoadState();
 
 		baseX = 0;
 		baseY = 0;
@@ -1053,25 +992,41 @@ public final class Client implements Runnable {
 		drawGameImage();
 		xCameraPos = 0;
 		yCameraPos = 0;
-		int chunkXLength = 0;
-		int chunkYLength = 0;
-		for(Chunk chunk : chunks) {
-			int chunkX = chunk.offsetX / 64;
-			int chunkY = chunk.offsetY / 64;
-			
-			if(chunkX > chunkXLength)
-				chunkXLength = chunkX;
-			if(chunkY > chunkYLength)
-				chunkYLength = chunkY;
-			
-			
+		int minTileX = 0;
+		int minTileY = 0;
+		int maxTileX = 0;
+		int maxTileY = 0;
+		boolean firstChunk = true;
+		for (Chunk chunk : chunks) {
+			if (firstChunk) {
+				minTileX = maxTileX = chunk.offsetX;
+				minTileY = maxTileY = chunk.offsetY;
+				firstChunk = false;
+			} else {
+				if (chunk.offsetX < minTileX) {
+					minTileX = chunk.offsetX;
+				}
+				if (chunk.offsetY < minTileY) {
+					minTileY = chunk.offsetY;
+				}
+				if (chunk.offsetX > maxTileX) {
+					maxTileX = chunk.offsetX;
+				}
+				if (chunk.offsetY > maxTileY) {
+					maxTileY = chunk.offsetY;
+				}
+			}
 		}
-		chunkXLength += 1;
-		chunkYLength += 1;
+		baseX = minTileX;
+		baseY = minTileY;
+		int chunkXLength = Math.max(1, ((maxTileX - minTileX) / 64) + 1);
+		int chunkYLength = Math.max(1, ((maxTileY - minTileY) / 64) + 1);
 		sceneGraph = new SceneGraph(64 * (chunkXLength), 64 * (chunkYLength), 4);
 		mapRegion = new MapRegion(sceneGraph, 64 * (chunkXLength), 64 * (chunkYLength));
 		fullMapCanvas = new DisplayCanvas(chunkXLength * Options.mapRegionSize.get(), chunkYLength * Options.mapRegionSize.get(), false);
 		for(Chunk chunk : chunks) {
+			chunk.offsetX -= minTileX;
+			chunk.offsetY -= minTileY;
 			chunk.init(this);
 
 			chunk.fillNamesFromIds();
@@ -1092,7 +1047,7 @@ public final class Client implements Runnable {
 	}
 
 	public final void loadFiles(byte[] landscapeBytes, byte[] objectBytes, int regionX, int regionY) {
-		chunks.clear();
+		resetChunkLoadState();
 
 		baseX = 0;
 		baseY = 0;
@@ -1472,24 +1427,6 @@ public final class Client implements Runnable {
 					sceneGraph.setChunk(chunk);
 					sceneGraph.renderScene(xCameraPos, yCameraPos, xCameraCurve, zCameraPos, currentPlane, yCameraCurve);
 					// xCameraPos, yCameraPos, xCameraCurve, zCameraPos, j, yCameraCurve
-
-					/*
-					if (chunk.isNewMap() && !chunk.hasGenerated) {
-						int num_houses = 5;
-						int built_houses = 0;
-
-						try {
-							LinkedList<SceneTileData> sceneTileGraph = sceneGraph.readJMAP(new File("./Editor/prefabs/house.jmap"));
-							int jmapWidth = sceneTileGraph.getLast().getX(),
-									jmapHeight = sceneTileGraph.getLast().getY();
-
-							sceneGraph.placeSceneTileData((int) (Math.random() * 64D), (int) (Math.random() * 64D), 0, sceneTileGraph);
-							chunk.hasGenerated = true;
-						} catch (IOException e) {
-							e.printStackTrace();
-						}
-					}
-			*/
 				} catch (Exception ex) {
 					ex.printStackTrace();
 				}
@@ -1632,11 +1569,22 @@ public final class Client implements Runnable {
 		boolean loadFailed = false;
 		for (Chunk chunk : Lists.newArrayList(chunks)) {
 			try {
-				chunk.loadChunk();
+				chunk.loadTerrain();
 			} catch (Exception exception) {
 				exception.printStackTrace();
 				loadFailed = true;
 				break;
+			}
+		}
+		if (!loadFailed) {
+			for (Chunk chunk : Lists.newArrayList(chunks)) {
+				try {
+					chunk.loadObjects();
+				} catch (Exception exception) {
+					exception.printStackTrace();
+					loadFailed = true;
+					break;
+				}
 			}
 		}
 		if (loadFailed) {
@@ -1917,6 +1865,17 @@ public final class Client implements Runnable {
 
 				SceneGraph.minimapUpdate = true;
 				System.out.println("UPDATED TILES");
+		});
+	}
+
+	public void forceMapUpdate() {
+		int positionX = xCameraPos;
+		int positionY = yCameraPos;
+		byte[] packData = MultiMapEncoder.encode(Lists.newArrayList(chunks));
+		runLater.add(() -> {
+			loadChunks(MultiMapEncoder.decode(packData));
+			xCameraPos = positionX;
+			yCameraPos = positionY;
 		});
 	}
 	

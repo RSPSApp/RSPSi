@@ -8,8 +8,6 @@ import com.jagex.Client;
 import com.jagex.cache.def.RSArea;
 import com.jagex.cache.graphics.Sprite;
 import com.jagex.cache.loader.config.RSAreaLoader;
-import com.jagex.map.procedural.Biome;
-import com.rspsi.misc.IntUtils;
 import com.rspsi.plugins.ClientPluginLoader;
 import javafx.application.Platform;
 import lombok.extern.slf4j.Slf4j;
@@ -36,6 +34,7 @@ import com.rspsi.options.Options;
 @Slf4j
 public final class MapRegion {
 
+	private static final int REAL_WATER_TEXTURE_ID = 1;
 	private static final int[] anIntArray140 = { 16, 32, 64, 128 };
 	private static final int[] anIntArray152 = { 1, 2, 4, 8 }; // orientation ->
 	// ??
@@ -493,53 +492,6 @@ public final class MapRegion {
 		return false;
 
 	}
-
-	
-	
-	/**
-	 * Spawns procedural objects for newly generated map chunks.
-	 */
-	public void generateNewObjects(Chunk chunk) {
-		int[][] treeMap = chunk.getTreeMap();
-
-		if (treeMap == null) {
-			return;
-		}
-
-		Biome biome = chunk.getBiome();
-		if (biome == null) {
-			return;
-		}
-
-		int chunkEndX = chunk.offsetX + 64;
-		int chunkEndY = chunk.offsetY + 64;
-
-		for (int x = chunk.offsetX; x < chunkEndX; x++) {
-			for (int y = chunk.offsetY; y < chunkEndY; y++) {
-				if (x < 0 || y < 0 || x >= overlays[0].length || y >= overlays[0][x].length) {
-					continue;
-				}
-				if (x >= treeMap.length || y >= treeMap[x].length) {
-					continue;
-				}
-
-				short overlay = overlays[0][x][y];
-				if (overlay == biome.waterOverlay || biome.trees == null || biome.trees.length == 0) {
-					continue;
-				}
-				if (treeMap[x][y] != 1) {
-					continue;
-				}
-
-				int orientation = IntUtils.randInt(0, 3);
-				int treeIndex = IntUtils.randInt(0, Math.max(1, biome.trees.length - 1));
-				spawnObjectToWorld(chunk.scenegraph, biome.trees[treeIndex], x, y, 0, 10, orientation, false);
-			}
-		}
-
-		chunk.newObjectsGenerated = true;
-	}
-
 	public final void unpackObjects(SceneGraph scene, byte[] data, int localX, int localY) {
 		//System.out.println("Width: " + width + " Length: " + length);
 		decoding: {
@@ -1026,6 +978,9 @@ public final class MapRegion {
 									}
 
 									int overlayTextureId = overlayFloor.getTexture();
+									if (overlayFloorId == com.rspsi.tools.MapDataExemplarLibrary.REAL_WATER_OVERLAY_ID) {
+										overlayTextureId = REAL_WATER_TEXTURE_ID;
+									}
 
 									int overlayTextureColour = -1;
 									int overlayMapColour = 0;
@@ -1106,7 +1061,17 @@ public final class MapRegion {
                                                     .getAnotherRgb()]
                                                     : 0;
                                         }
-                                        if ((overlayTextureId >= 0)) {
+                                        if (overlayFloorId == com.rspsi.tools.MapDataExemplarLibrary.REAL_WATER_OVERLAY_ID) {
+                                            overlayTextureId = REAL_WATER_TEXTURE_ID;
+                                            overlayHslColour = -1;
+                                            overlayTextureColour = -1;
+                                            if (TextureLoader.instance != null
+                                                    && overlayTextureId >= 0
+                                                    && overlayTextureId < TextureLoader.instance.count()
+                                                    && TextureLoader.getTexture(overlayTextureId) != null) {
+                                                overlayRgbColour = TextureLoader.getTexture(overlayTextureId).averageTextureColour();
+                                            }
+                                        } else if ((overlayTextureId >= 0)) {
                                             overlayHslColour = -1;
                                             if (overlayFloor.getRgb() != 0xff00ff) {
                                                 overlayHslColour = overlayFloor.getRgb();
@@ -1175,10 +1140,13 @@ public final class MapRegion {
                                                 rgb_bitset_randomized, overlayRgbColour, -1, 0, 0, true, flag);
                                     }
 
-                                }
-                            }
-                        }
-                    }
+								}
+							} else {
+								scene.getTile(z, centreX, centreY).simple = null;
+								scene.getTile(z, centreX, centreY).shape = null;
+							}
+						}
+					}
                 }
             }
 
@@ -1999,6 +1967,9 @@ public final class MapRegion {
 
                                     Floor overlayFloor = FloorDefinitionLoader.getOverlay(overlayFloorId - 1);
                                     int overlayTextureId = overlayFloor.getTexture();
+                                    if (overlayFloorId == com.rspsi.tools.MapDataExemplarLibrary.REAL_WATER_OVERLAY_ID) {
+                                        overlayTextureId = REAL_WATER_TEXTURE_ID;
+                                    }
 
                                     int overlayTextureColour = -1;
                                     int overlayMapColour = 0;
@@ -2055,7 +2026,17 @@ public final class MapRegion {
                                                     .getAnotherRgb()]
                                                     : 0;
                                         }
-                                        if ((overlayTextureId >= 0)) {
+                                        if (overlayFloorId == com.rspsi.tools.MapDataExemplarLibrary.REAL_WATER_OVERLAY_ID) {
+                                            overlayTextureId = REAL_WATER_TEXTURE_ID;
+                                            overlayHslColour = -1;
+                                            overlayTextureColour = -1;
+                                            if (TextureLoader.instance != null
+                                                    && overlayTextureId >= 0
+                                                    && overlayTextureId < TextureLoader.instance.count()
+                                                    && TextureLoader.getTexture(overlayTextureId) != null) {
+                                                overlayRgbColour = TextureLoader.getTexture(overlayTextureId).averageTextureColour();
+                                            }
+                                        } else if ((overlayTextureId >= 0)) {
                                             overlayHslColour = -1;
                                             if (overlayFloor.getRgb() != 0xff00ff) {
                                                 overlayHslColour = overlayFloor.getRgb();
@@ -2405,6 +2386,9 @@ public final class MapRegion {
 
                                     Floor overlayFloor = FloorDefinitionLoader.getOverlay(overlayFloorId - 1);
                                     int overlayTextureId = overlayFloor.getTexture();
+                                    if (overlayFloorId == com.rspsi.tools.MapDataExemplarLibrary.REAL_WATER_OVERLAY_ID) {
+                                        overlayTextureId = REAL_WATER_TEXTURE_ID;
+                                    }
 
                                     int overlayTextureColour = -1;
                                     int overlayMapColour = 0;
@@ -2450,7 +2434,17 @@ public final class MapRegion {
                                                     .getAnotherRgb()]
                                                     : 0;
                                         }
-                                        if ((overlayTextureId >= 0)) {
+                                        if (overlayFloorId == com.rspsi.tools.MapDataExemplarLibrary.REAL_WATER_OVERLAY_ID) {
+                                            overlayTextureId = REAL_WATER_TEXTURE_ID;
+                                            overlayHslColour = -1;
+                                            overlayTextureColour = -1;
+                                            if (TextureLoader.instance != null
+                                                    && overlayTextureId >= 0
+                                                    && overlayTextureId < TextureLoader.instance.count()
+                                                    && TextureLoader.getTexture(overlayTextureId) != null) {
+                                                overlayRgbColour = TextureLoader.getTexture(overlayTextureId).averageTextureColour();
+                                            }
+                                        } else if ((overlayTextureId >= 0)) {
                                             overlayHslColour = -1;
                                             if (overlayFloor.getRgb() != 0xff00ff) {
                                                 overlayHslColour = overlayFloor.getRgb();

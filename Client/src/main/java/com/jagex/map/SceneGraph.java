@@ -2981,7 +2981,7 @@ public class SceneGraph {
 			if (Options.showUnderlayNumbers.get()) {
 				if (activeTile != null) {
 					try {
-						int underlayId = getMapRegion().underlays[activeTile.plane][activeTile.positionX][activeTile.positionY] - 1;
+						int underlayId = getMapRegion().underlays[activeTile.plane][activeTile.positionX][activeTile.positionY];
 						if (underlayId > 0 && screenPos.getX() > 0 && screenPos.getY() > 0)
 							Client.getSingleton().robotoFont.drawString("" + underlayId, (int) screenPos.getX(), (int) screenPos.getY(), 0xffff00);
 					} catch (Exception e) {
@@ -2991,7 +2991,7 @@ public class SceneGraph {
 			if (Options.showOverlayNumbers.get()) {
 				if (activeTile != null) {
 					try {
-						int overlayId = getMapRegion().overlays[activeTile.plane][activeTile.positionX][activeTile.positionY] - 1;
+						int overlayId = getMapRegion().overlays[activeTile.plane][activeTile.positionX][activeTile.positionY];
 						if (overlayId > 0 && screenPos.getX() > 0 && screenPos.getY() > 0)
 							Client.getSingleton().robotoFont.drawString("" + overlayId, (int) screenPos.getX(), (int) screenPos.getY(), 0xffff00);
 					} catch (Exception e) {
@@ -4114,11 +4114,12 @@ public class SceneGraph {
 					flag1 = true;
 					renderShapedTile(x, ySine, xSine, activeTile.shape, yCosine, y, xCosine, l,
 							activeTile.simple == null && activeTile.tileHighlighted, activeTile.tileSelected, activeTile.tileBeingSelected, activeTile.tileFlags);
-				} else if (plane == Options.currentHeight.get() && Options.showHiddenTiles.get() &&
+				} else if (plane == Options.currentHeight.get() &&
 						activeTile.shape == null && activeTile.simple == null &&
 						!activeTile.temporaryShapedTile.isPresent() && !activeTile.temporarySimpleTile.isPresent()) {
-					SimpleTile hiddenTile = TileUtils.HIDDEN_TILE;
-					this.renderPlainTile(hiddenTile, plane, ySine, yCosine, xSine, xCosine, x, y, true,
+					boolean drawHiddenTile = Options.showHiddenTiles.get();
+					SimpleTile hiddenTile = drawHiddenTile ? TileUtils.HIDDEN_TILE : TileUtils.PICKABLE_HIDDEN_TILE;
+					this.renderPlainTile(hiddenTile, plane, ySine, yCosine, xSine, xCosine, x, y, drawHiddenTile,
 							activeTile.tileHighlighted, activeTile.tileSelected, activeTile.tileBeingSelected, getMapRegion().tileFlags[plane][x][y]);
 				}
 

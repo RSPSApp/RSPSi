@@ -81,6 +81,8 @@ import com.rspsi.resources.ResourceLoader;
 import com.rspsi.swatches.BaseSwatch;
 import com.rspsi.swatches.OverlaySwatch;
 import com.rspsi.swatches.UnderlaySwatch;
+import com.rspsi.tools.CacheBiomeProfileMiner;
+import com.rspsi.tools.BiomeProfilePreviewGenerator;
 
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -104,9 +106,6 @@ import javafx.util.Duration;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-
-import static com.jagex.map.MapRegion.perlinNoise;
-import static com.rspsi.misc.SimplexNoise.noise;
 
 @Slf4j
 @Getter
@@ -155,8 +154,8 @@ public class MainWindow extends Application {
 	private SelectPackWindow selectPack;
 	private SelectXTEAWindow selectXTEA;
 	private RemappingTool remappingTool;
-
 	private Mesh errorMesh;
+	private BiomeProfileReportDialog.PreviewRequest lastBiomePreviewRequest;
 
 	public void fillSwatches() {
 
@@ -166,7 +165,7 @@ public class MainWindow extends Application {
 				continue;
 			Group g = new Group();
 			String label = "";
-			label = "[" + idx + "] rgb(" + ColourUtils.getRed(floor.getRgb()) + "," + ColourUtils.getGreen(floor.getRgb()) + ","
+			label = "[" + (idx + 1) + "] rgb(" + ColourUtils.getRed(floor.getRgb()) + "," + ColourUtils.getGreen(floor.getRgb()) + ","
 					+ ColourUtils.getBlue(floor.getRgb()) + ")";
 			Rectangle rect = new Rectangle();
 			rect.setWidth(32);
@@ -192,7 +191,7 @@ public class MainWindow extends Application {
 			if (floor.getTexture() == -1 || floor.getTexture() > TextureLoader.instance.count()) {
 				continue;
 			} else {
-				label = "[" + idx + "] texture(" + floor.getTexture() + ")";
+				label = "[" + (idx + 1) + "] texture(" + floor.getTexture() + ")";
 				Texture texture = TextureLoader.getTexture(floor.getTexture());
 				if(texture == null)
 					continue;
@@ -637,7 +636,7 @@ public class MainWindow extends Application {
 
 					}
 				}
-				if(singleton != null) {
+				if(singleton == MainWindow.this) {
 					Platform.exit();
 					System.exit(0);
 				}
@@ -918,70 +917,21 @@ public class MainWindow extends Application {
 	}
 
 	public void setupOpenOptions() throws Exception {
+		controller.getMineBiomeProfilesMenuItem().setOnAction(evt -> {
+			BiomeProfileMiningDialog dialog = new BiomeProfileMiningDialog();
+			dialog.showAndWait(stage).ifPresent(this::runBiomeProfileMining);
+		});
 
-		GenerateNewMapWindow genNew = new GenerateNewMapWindow();
-		
-		genNew.start(new Stage());
-
-
-		controller.getGenNewMapButton().setOnAction(evt -> {
-				// Toby cick ok when generating new map
-				int chunkWidth = genNew.getWidth();
-				int chunkHeight = genNew.getLength();
-				int height = chunkHeight * 64;
-				int width = chunkWidth * 64;
-				int[][] heights = new int[((chunkWidth * 64) + 1)][((chunkHeight * 64) + 1)];
-
-				for (int y = 0; y < height; y++) {
-					for (int x = 0; x < width; x++) {
-						double nx = x/ width - 0.5, ny = y/height - 0.5;
-						heights[y][x] = (int) noise(2.34 * nx, 2.34 * ny);
-					}
-				}
-
-				try {
-
-					Client.runLater.add(() -> {
-						clientInstance.loadNew(chunkWidth, chunkHeight, heights, genNew.getMinHeight(), genNew.getMaxHeight(), genNew.getTreeMap());
-						fullMapView.resizeMap();
-					});
-				} catch(Exception ex) {
-					FXDialogs.showError(stage,"Error while creating new map", "There was a failure while attempting to initialize\na new map.");
-					ex.printStackTrace();
-				}
-
+		controller.getOpenCacheMenuItem().setOnAction(evt -> {
+			LauncherWindow launcher = LauncherWindow.getSingleton();
+			if (launcher != null) {
+				launcher.showCacheDialog(this);
+			}
 		});
 
 		controller.getNewMapButton().setOnAction(evt -> {
-			/*try {
-				byte[] landscape = ByteStreams.toByteArray(getClass().getResourceAsStream("/misc/blank_region.dat"));
-				byte[] object = ByteStreams.toByteArray(getClass().getResourceAsStream("/misc/blank_regionO.dat"));
-
-				Client.runLater.add(() -> {
-					clientInstance.loadFiles(landscape, object, 0, 0);
-					fullMapView.resizeMap();
-				});
-			} catch(Exception ex) {
-				FXDialogs.showError("Error while creating new map", "There was a failure while attempting to initialize\na new map.");
-				ex.printStackTrace();
-			}*/
-			
-			genNew.show();
-			if(genNew.okClicked) {
-				int chunkWidth = genNew.getWidth();
-				int chunkHeight = genNew.getLength();
-				try {
-
-					Client.runLater.add(() -> {
-						clientInstance.loadNew(chunkWidth, chunkHeight, genNew.getHeights(), genNew.getMinHeight(), genNew.getMaxHeight(), genNew.getTreeMap());
-						fullMapView.resizeMap();
-					});
-				} catch(Exception ex) {
-					FXDialogs.showError(stage,"Error while creating new map", "There was a failure while attempting to initialize\na new map.");
-					ex.printStackTrace();
-				}
-			}
-		
+			BiomeProfileReportDialog dialog = new BiomeProfileReportDialog();
+			dialog.showAndWait(stage, lastBiomePreviewRequest).ifPresent(this::loadBiomeProfilePreview);
 		});
 
 		controller.getOpenAsPackBtn().setOnAction(act -> {
@@ -1071,8 +1021,164 @@ public class MainWindow extends Application {
 		});
 	}
 
+	public void closeForCacheSwitch() {
+		if (clientInstance != null) {
+			try {
+				clientInstance.exit();
+			} catch (Exception ex) {
+				ex.printStackTrace();
+			}
+		}
+		if (stage != null) {
+			stage.close();
+		}
+	}
+
 	public static MainWindow getSingleton() {
 		return singleton;
+	}
+
+	private void runBiomeProfileMining(CacheBiomeProfileMiner.MiningConfig config) {
+		FXDialogs.showInformation(stage, "Biome profile mining started",
+				"Mining cache regions in the background.\nA JSON report will be written when profiling completes.");
+		service.submit(() -> {
+			try {
+				CacheBiomeProfileMiner.MiningResult result = CacheBiomeProfileMiner.mineProfiles(config);
+				Platform.runLater(() -> FXDialogs.showInformation(
+						stage,
+						"Biome profile mining complete",
+						"Wrote " + result.report.discoveredProfiles + " discovered profiles from "
+								+ result.report.sampledRegions + " sampled regions.\n\n"
+								+ result.outputPath
+				));
+			} catch (Exception ex) {
+				Platform.runLater(() -> FXDialogs.showException(
+						stage,
+						"Biome profile mining failed",
+						"There was a failure while mining cache biome profiles.",
+						ex instanceof Exception ? (Exception) ex : new RuntimeException(ex)
+				));
+			}
+		});
+	}
+
+	private void scheduleBiomePreviewCameraReset() {
+		Client.timedConsumers.put(
+				client -> applyBiomePreviewCameraReset(0),
+				System.currentTimeMillis()
+		);
+	}
+
+	private void applyBiomePreviewCameraReset(int attempts) {
+		if (clientInstance == null) {
+			return;
+		}
+		if (clientInstance.loadState != Client.LoadState.ACTIVE
+				|| clientInstance.mapRegion == null
+				|| clientInstance.mapRegion.tileHeights == null
+				|| clientInstance.mapRegion.tileHeights.length == 0
+				|| clientInstance.mapRegion.tileHeights[0] == null
+				|| clientInstance.mapRegion.tileHeights[0].length < 2
+				|| clientInstance.mapRegion.tileHeights[0][0] == null
+				|| clientInstance.mapRegion.tileHeights[0][0].length < 2) {
+			if (attempts < 120) {
+				Client.timedConsumers.put(
+						client -> applyBiomePreviewCameraReset(attempts + 1),
+						System.currentTimeMillis() + 50L
+				);
+			}
+			return;
+		}
+
+		if (controller != null
+				&& controller.getCurrentHeightSpinner() != null
+				&& controller.getCurrentHeightSpinner().getValueFactory() != null
+				&& !Integer.valueOf(0).equals(controller.getCurrentHeightSpinner().getValue())) {
+			Platform.runLater(() -> controller.getCurrentHeightSpinner().getValueFactory().setValue(0));
+		}
+
+		int centreTileX;
+		int centreTileY;
+		if (clientInstance.chunks != null && !clientInstance.chunks.isEmpty()) {
+			int minTileX = clientInstance.chunks.stream().mapToInt(chunk -> chunk.offsetX).min().orElse(0);
+			int minTileY = clientInstance.chunks.stream().mapToInt(chunk -> chunk.offsetY).min().orElse(0);
+			int maxTileX = clientInstance.chunks.stream().mapToInt(chunk -> chunk.offsetX + 63).max().orElse(63);
+			int maxTileY = clientInstance.chunks.stream().mapToInt(chunk -> chunk.offsetY + 63).max().orElse(63);
+			centreTileX = (minTileX + maxTileX) / 2;
+			centreTileY = (minTileY + maxTileY) / 2;
+		} else {
+			int maxTileX = clientInstance.mapRegion.tileHeights[0].length - 2;
+			int maxTileY = clientInstance.mapRegion.tileHeights[0][0].length - 2;
+			centreTileX = Math.max(1, maxTileX / 2);
+			centreTileY = Math.max(1, maxTileY / 2);
+		}
+		int worldX = centreTileX * 128;
+		int worldY = centreTileY * 128;
+		int terrainHeight = clientInstance.getHeightAdjusted(worldX, worldY, 0);
+
+		clientInstance.xCameraPos = worldX;
+		clientInstance.yCameraPos = worldY;
+		clientInstance.zCameraPos = terrainHeight - 1600;
+		clientInstance.xCameraCurve = 0;
+		clientInstance.yCameraCurve = 160;
+		clientInstance.cameraYaw = 0;
+		clientInstance.cameraRoll = 128;
+		clientInstance.cameraMoved = true;
+		SceneGraph.minimapUpdate = true;
+		fullMapView.resizeMap();
+	}
+
+	private void loadBiomeProfilePreview(BiomeProfileReportDialog.PreviewRequest request) {
+		lastBiomePreviewRequest = request;
+		service.submit(() -> {
+			BiomeProfilePreviewGenerator.invalidatePreviewCache();
+			try {
+					var chunks = BiomeProfilePreviewGenerator.generatePreview(
+							request.profile(),
+							request.width(),
+							request.length(),
+							request.seed(),
+							request.originRegionX(),
+							request.originRegionY()
+					);
+				Client.runLater.add(() -> {
+					clientInstance.loadChunks(chunks);
+					scheduleBiomePreviewCameraReset();
+					fullMapView.resizeMap();
+				});
+			} catch (Exception ex) {
+				ex.printStackTrace();
+				try {
+						var fallbackChunks = BiomeProfilePreviewGenerator.generatePreview(
+								request.profile(),
+								request.width(),
+								request.length(),
+								request.seed(),
+								request.originRegionX(),
+								request.originRegionY(),
+								false
+						);
+					Client.runLater.add(() -> {
+						clientInstance.loadChunks(fallbackChunks);
+						scheduleBiomePreviewCameraReset();
+						fullMapView.resizeMap();
+					});
+					Platform.runLater(() -> FXDialogs.showInformation(
+							stage,
+							"Settlement preview fallback",
+							"Settlement generation failed for this biome, so a terrain-only preview was loaded instead."
+					));
+				} catch (Exception fallbackEx) {
+					fallbackEx.addSuppressed(ex);
+					fallbackEx.printStackTrace();
+					Platform.runLater(() -> FXDialogs.showError(
+							stage,
+							"Error while generating biome preview",
+							"There was a failure while generating the biome preview."
+					));
+				}
+			}
+		});
 	}
 
 }
